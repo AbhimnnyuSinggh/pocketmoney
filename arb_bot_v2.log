@@ -1,0 +1,312 @@
+[2026-02-11 20:26:13] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Multi-Platform Prediction Market Arb Bot v2.0
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Mode: dry_run
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Platforms: Polymarket + Kalshi
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Strategies: Cross-Platform Arb | Bonds | Intra-Market
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Bankroll: $1000.00
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Min ROI: 0.3%
+[2026-02-11 20:26:13] INFO     arb_bot.main —   Scan interval: 60s
+[2026-02-11 20:26:13] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:26:15] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:26:15] INFO     arb_bot.main — Scan cycle #1 | 2026-02-11 14:56:15 UTC
+[2026-02-11 20:26:15] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:26:15] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:26:15] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:26:15] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:26:38] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:27:23] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:27:23] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:27:23] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:27:23] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:27:38] INFO     arb_bot.main — Shutdown signal received...
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:27:57] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:27:57] INFO     arb_bot.main — 🚨 20 NEW opportunities to alert!
+[2026-02-11 20:28:35] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:28:35] INFO     arb_bot.main — Bot stopped
+[2026-02-11 20:29:45] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Multi-Platform Prediction Market Arb Bot v2.0
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Mode: dry_run
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Platforms: Polymarket + Kalshi
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Strategies: Cross-Platform Arb | Bonds | Intra-Market
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Bankroll: $1000.00
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Min ROI: 0.3%
+[2026-02-11 20:29:45] INFO     arb_bot.main —   Scan interval: 60s
+[2026-02-11 20:29:45] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:29:47] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:29:47] INFO     arb_bot.main — Scan cycle #1 | 2026-02-11 14:59:47 UTC
+[2026-02-11 20:29:47] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:29:47] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:29:47] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:29:47] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:30:04] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:30:50] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:30:50] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:30:50] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:30:50] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:31:21] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:31:21] INFO     arb_bot.main — 🚨 20 NEW opportunities to alert!
+[2026-02-11 20:32:09] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:32:10] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:32:10] INFO     arb_bot.main — Scan cycle #2 | 2026-02-11 15:02:10 UTC
+[2026-02-11 20:32:10] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:32:10] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:32:10] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:32:10] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:32:26] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:33:21] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:33:21] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:33:21] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:33:21] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:33:53] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:33:53] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:33:53] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:33:54] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:33:54] INFO     arb_bot.main — Scan cycle #3 | 2026-02-11 15:03:54 UTC
+[2026-02-11 20:33:54] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:33:54] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:33:54] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:33:54] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:34:13] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:35:01] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:35:01] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:35:01] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:35:01] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:35:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:35:31] INFO     arb_bot.main — 🚨 4 NEW opportunities to alert!
+[2026-02-11 20:35:39] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:35:40] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:35:40] INFO     arb_bot.main — Scan cycle #4 | 2026-02-11 15:05:40 UTC
+[2026-02-11 20:35:40] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:35:40] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:35:40] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:35:40] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:35:51] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:36:39] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:36:39] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:36:39] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:36:39] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:37:07] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:37:07] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:37:07] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:37:08] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:37:08] INFO     arb_bot.main — Scan cycle #5 | 2026-02-11 15:07:08 UTC
+[2026-02-11 20:37:08] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:37:08] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:37:08] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:37:08] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:37:28] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:38:14] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:38:14] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:38:14] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:38:14] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:38:38] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:38:38] INFO     arb_bot.main — 🚨 2 NEW opportunities to alert!
+[2026-02-11 20:38:53] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:38:54] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:38:54] INFO     arb_bot.main — Scan cycle #6 | 2026-02-11 15:08:54 UTC
+[2026-02-11 20:38:54] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:38:54] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:38:54] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:38:54] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:39:04] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:39:54] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:39:54] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:39:54] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:39:54] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:40:19] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:40:19] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:40:19] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:40:20] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:40:20] INFO     arb_bot.main — Scan cycle #7 | 2026-02-11 15:10:20 UTC
+[2026-02-11 20:40:20] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:40:20] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:40:20] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:40:20] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:40:39] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:41:29] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:41:29] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:41:29] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:41:29] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:42:03] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:42:03] INFO     arb_bot.main — 🚨 17 NEW opportunities to alert!
+[2026-02-11 20:42:43] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:42:44] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:42:44] INFO     arb_bot.main — Scan cycle #8 | 2026-02-11 15:12:44 UTC
+[2026-02-11 20:42:44] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:42:44] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:42:44] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:42:44] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:42:54] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:43:45] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:43:45] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:43:45] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:43:45] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:44:24] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:44:24] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:44:24] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:44:25] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:44:25] INFO     arb_bot.main — Scan cycle #9 | 2026-02-11 15:14:25 UTC
+[2026-02-11 20:44:25] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:44:25] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:44:25] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:44:25] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:44:43] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:45:35] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:45:35] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:45:35] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:45:35] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:46:13] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:46:13] INFO     arb_bot.main — 🚨 6 NEW opportunities to alert!
+[2026-02-11 20:46:55] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:46:56] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:46:56] INFO     arb_bot.main — Scan cycle #10 | 2026-02-11 15:16:56 UTC
+[2026-02-11 20:46:56] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:46:56] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:46:56] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:46:56] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:47:06] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:47:53] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:47:53] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:47:53] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:47:53] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:48:30] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:48:30] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:48:30] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:48:31] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:48:31] INFO     arb_bot.main — Scan cycle #11 | 2026-02-11 15:18:31 UTC
+[2026-02-11 20:48:31] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:48:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:48:31] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:48:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:48:55] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:49:46] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:49:46] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:49:46] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:49:46] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:50:17] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:50:17] INFO     arb_bot.main — 🚨 2 NEW opportunities to alert!
+[2026-02-11 20:50:22] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:50:23] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:50:23] INFO     arb_bot.main — Scan cycle #12 | 2026-02-11 15:20:23 UTC
+[2026-02-11 20:50:23] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:50:23] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:50:23] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:50:23] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:50:32] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:51:24] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:51:24] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:51:24] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:51:24] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:51:48] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:51:48] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:51:48] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:51:49] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:51:49] INFO     arb_bot.main — Scan cycle #13 | 2026-02-11 15:21:49 UTC
+[2026-02-11 20:51:49] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:51:49] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:51:49] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:51:49] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:52:13] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:53:05] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:53:05] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:53:05] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:53:05] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:53:32] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:53:32] INFO     arb_bot.main — 🚨 15 NEW opportunities to alert!
+[2026-02-11 20:54:01] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:54:02] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:54:02] INFO     arb_bot.main — Scan cycle #14 | 2026-02-11 15:24:02 UTC
+[2026-02-11 20:54:02] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:54:02] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:54:02] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:54:02] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:54:12] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket
+[2026-02-11 20:55:04] INFO     arb_bot.cross_platform — Fetched 2000 markets from Kalshi
+[2026-02-11 20:55:04] INFO     arb_bot.cross_platform — Total markets across all platforms: 4000
+[2026-02-11 20:55:04] INFO     arb_bot.cross_platform — Scanning for cross-platform arbitrage...
+[2026-02-11 20:55:04] INFO     arb_bot.cross_platform — Matching 2000 Polymarket vs 2000 Kalshi markets...
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — Scanning for high-probability bonds...
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — Found 20 high-probability bond opportunities
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — Scanning for intra-market mispricing...
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — SCAN COMPLETE | Cross-platform arbs: 0 | Bonds: 20 | Mispriced: 0 | TOTAL: 20
+[2026-02-11 20:55:30] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:55:30] INFO     arb_bot.main — No new opportunities this cycle
+[2026-02-11 20:55:30] INFO     arb_bot.main — Next scan in 1s...
+[2026-02-11 20:55:31] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:55:31] INFO     arb_bot.main — Scan cycle #15 | 2026-02-11 15:25:31 UTC
+[2026-02-11 20:55:31] INFO     arb_bot.main — ============================================================
+[2026-02-11 20:55:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:55:31] INFO     arb_bot.cross_platform — Fetching markets from all platforms...
+[2026-02-11 20:55:31] INFO     arb_bot.cross_platform — ==================================================
+[2026-02-11 20:55:44] INFO     arb_bot.cross_platform — Fetched 2000 markets from Polymarket

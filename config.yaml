@@ -1,0 +1,66 @@
+# ============================================================
+# Multi-Platform Prediction Market Arb Bot v2.0 — Config
+# ============================================================
+
+# ---------- Wallet / Auth ----------
+wallet:
+  private_key: ""
+  funder_address: ""
+  signature_type: 1
+
+# ---------- Execution Mode ----------
+execution:
+  mode: "dry_run"            # "dry_run" or "live"
+  order_type: "limit"
+  post_only: true
+
+# ---------- Bankroll & Risk ----------
+bankroll:
+  total_usdc: 1000.0
+  max_per_opportunity: 50.0
+  max_open_positions: 10
+  min_profit_pct: 0.3        # Global minimum ROI % for any alert
+  fee_buffer_cents: 0.5
+
+# ---------- Scanner ----------
+scanner:
+  interval_seconds: 60       # 60 seconds (fetches from multiple platforms now)
+  gamma_api_url: "https://gamma-api.polymarket.com"
+  clob_api_url: "https://clob.polymarket.com"
+  markets_per_page: 100
+  max_markets: 2000
+  prioritize_new: true
+  min_liquidity: 10.0
+  max_liquidity: 10000000.0
+  skip_closed: true
+  orderbook_depth: 5
+
+# ---------- Cross-Platform Arbitrage Settings ----------
+cross_platform:
+  min_profit_pct: 1.0        # Min ROI % for cross-platform arb alerts
+  similarity_threshold: 0.60 # Title match threshold (0-1, lower = more matches)
+
+# ---------- High-Probability Bond Settings ----------
+bonds:
+  min_price: 0.93            # Minimum price (93¢+) to consider as bond
+  min_roi_pct: 0.5           # Min ROI % for bond alerts
+
+# ---------- Intra-Market Mispricing ----------
+mispricing:
+  max_sum: 0.98              # YES + NO must be below this to trigger
+
+# ---------- Telegram Alerts ----------
+telegram:
+  enabled: true
+  bot_token: ""
+  chat_id: ""
+  alert_on_opportunity: true
+  alert_on_execution: true
+  alert_on_error: true
+  min_alert_profit_pct: 0.3
+
+# ---------- Logging ----------
+logging:
+  level: "INFO"
+  file: "arb_bot_v2.log"
+  console: true
