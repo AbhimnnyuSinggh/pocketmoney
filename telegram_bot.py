@@ -1,3 +1,8 @@
+
+telegram_bot.py
+
+
+
 """
 telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection
 Users choose which signal type AND category they want via inline keyboards.
@@ -185,6 +190,11 @@ class TelegramBotHandler:
         # Stats
         self.signals_sent = 0
         self.start_time = time.time()
+        # Per-user dedup: {chat_id: {opp_key: last_sent_time}}
+        self._user_seen: dict[str, dict[str, float]] = {}
+        self.dedup_cooldown = cfg.get("interactive", {}).get(
+            "dedup_cooldown_seconds", 1800  # 30 min default
+        )
         # Polling internals
         self._last_update_id = 0
         self._lock = threading.Lock()
@@ -276,12 +286,13 @@ class TelegramBotHandler:
             return "all_cat"
         return pref.get("category", "all_cat")
     def _set_signal(self, chat_id: str, sig_key: str):
-        """Set user's signal type."""
+        """Set user's signal type. Resets dedup so they get fresh signals."""
         pref = self.user_prefs.get(chat_id, {})
         if isinstance(pref, str):
             pref = {"signal": pref, "category": "all_cat"}
         pref["signal"] = sig_key
         self.user_prefs[chat_id] = pref
+        self._user_seen.pop(chat_id, None)  # Reset dedup on combo change
     def _set_category(self, chat_id: str, cat_key: str):
         """Set user's category filter."""
         pref = self.user_prefs.get(chat_id, {})
@@ -810,7 +821,9 @@ class TelegramBotHandler:
             s = SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES["all"])
             c = CATEGORIES.get(cat_key, CATEGORIES["all_cat"])
             want_types = s["opp_types"]  # None means all
-            # Filter by signal type
+            # Filter by signal type + category + per-user dedup
+            now = time.time()
+            user_seen = self._user_seen.setdefault(chat_id, {})
             user_opps = []
             for opp in filtered:
                 if want_types is not None and opp.opp_type not in want_types:
@@ -818,11 +831,20 @@ class TelegramBotHandler:
                 # Filter by category
                 if not self._matches_category(opp, cat_key):
                     continue
+                # Per-user dedup: include rounded price so price changes
+                # generate new alerts
+                dedup_key = (
+                    f"{opp.opp_type}:{opp.title[:50]}:"
+                    f"{round(opp.profit_pct, 1)}"
+                )
+                if now - user_seen.get(dedup_key, 0) < self.dedup_cooldown:
+                    continue
+                user_seen[dedup_key] = now
                 user_opps.append(opp)
             if not user_opps:
                 logger.info(
                     f"  User {chat_id} ({sig_key}+{cat_key}): "
-                    f"0 matching — skipping"
+                    f"0 new matching — skipping"
                 )
                 continue
             logger.info(
