@@ -50,6 +50,137 @@ def setup_logging(cfg: dict):
     logging.basicConfig(level=level, handlers=handlers)
 logger = logging.getLogger("arb_bot.main")
 # ---------------------------------------------------------------------------
+# Main Loop
+# ---------------------------------------------------------------------------
+def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = None) -> list[Opportunity]:
+    """Execute one full scan cycle across all platforms."""
+    logger.info(f"{'='*60}")
+    logger.info(f"Scan cycle #{cycle} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    logger.info(f"{'='*60}")
+    try:
+        opportunities = run_full_cross_platform_scan(cfg)
+    except Exception as e:
+        logger.error(f"Scan error: {e}", exc_info=True)
+        send_telegram_message(f"❌ Scan error: {str(e)[:200]}", cfg)
+        opportunities = []
+    # --- Whale Convergence Scan ---
+    try:
+        whale_opps = find_whale_opportunities(cfg)
+        opportunities.extend(whale_opps)
+    except Exception as e:
+        logger.error(f"Whale tracker error: {e}", exc_info=True)
+    # --- New Market Sniper ---
+    try:
+        new_market_opps = find_new_market_opportunities(cfg)
+        opportunities.extend(new_market_opps)
+    except Exception as e:
+        logger.error(f"New market sniper error: {e}", exc_info=True)
+    if not opportunities:
+        logger.info("No opportunities this cycle")
+        send_no_opportunities_message(cycle, cfg)
+        return opportunities
+    logger.info(f"🚨 {len(opportunities)} opportunities found!")
+    # Route through interactive handler if available
+    # Per-user dedup is handled inside distribute_signals
+    if bot_handler:
+        bot_handler.distribute_signals(opportunities, cfg)
+    else:
+        send_opportunities_batch(opportunities, cfg)
+    return opportunities
+def main():
+    parser = argparse.ArgumentParser(description="Multi-Platform Prediction Market Arb Bot")
+    parser.add_argument("--config", default="config.yaml", help="Config file path")
+    parser.add_argument("--once", action="store_true", help="Single scan then exit")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
+    # Add default cross-platform settings if not in config
+    cfg.setdefault("cross_platform", {
+        "min_profit_pct": 1.0,
+        "similarity_threshold": 0.60,
+    })
+    cfg.setdefault("bonds", {
+        "min_price": 0.93,
+        "min_roi_pct": 0.5,
+    })
+    cfg.setdefault("mispricing", {
+        "max_sum": 0.98,
+    })
+    cfg.setdefault("whales", {
+        "enabled": True,
+        "min_trade_size": 1000,
+        "convergence_count": 3,
+        "convergence_window_min": 60,
+        "lookback_minutes": 120,
+    })
+    cfg.setdefault("new_markets", {
+        "enabled": True,
+        "cache_file": "known_markets.json",
+    })
+    setup_logging(cfg)
+    logger.info("=" * 60)
+    logger.info("  Multi-Platform Prediction Market Arb Bot v2.0")
+    logger.info(f"  Mode: {cfg['execution']['mode']}")
+    logger.info(f"  Platforms: Polymarket + Kalshi")
+    logger.info(f"  Strategies: Cross-Platform Arb | Bonds | Intra-Market")
+    logger.info(f"  Whale Tracker: {'ON' if cfg.get('whales', {}).get('enabled') else 'OFF'}")
+    logger.info(f"  New Market Sniper: {'ON' if cfg.get('new_markets', {}).get('enabled') else 'OFF'}")
+    logger.info(f"  Bankroll: ${cfg['bankroll']['total_usdc']:.2f}")
+    logger.info(f"  Min ROI: {cfg['bankroll']['min_profit_pct']}%")
+    logger.info(f"  Scan interval: {cfg['scanner']['interval_seconds']}s")
+    logger.info("=" * 60)
+    if cfg["telegram"]["enabled"]:
+        send_startup_message(cfg)
+    # Start interactive bot (polling for /start, /menu, etc.)
+    bot_handler = TelegramBotHandler(cfg)
+    bot_handler.start_polling()
+    logger.info("Interactive signal selector active")
+    # Graceful shutdown
+    running = True
+    def handle_signal(signum, frame):
+        nonlocal running
+        logger.info("Shutdown signal received...")
+        running = False
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+    # Main loop
+    cycle = 0
+    interval = cfg["scanner"]["interval_seconds"]
+    while running:
+        cycle += 1
+        start = time.time()
+        try:
+            run_cycle(cfg, cycle, bot_handler)
+        except Exception as e:
+            logger.error(f"Cycle #{cycle} error: {e}", exc_info=True)
+        if args.once:
+            logger.info("Single-run mode — done")
+            break
+        elapsed = time.time() - start
+        sleep_time = max(1, interval - elapsed)
+        logger.info(f"Next scan in {sleep_time:.0f}s...")
+        wake = time.time() + sleep_time
+        while time.time() < wake and running:
+            time.sleep(1)
+    bot_handler.stop_polling()
+    logger.info("Bot stopped")
+if __name__ == "__main__":
+    main()
+    fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)-8s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    if cfg["logging"]["console"]:
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setFormatter(fmt)
+        handlers.append(ch)
+    log_file = cfg["logging"].get("file")
+    if log_file:
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(fmt)
+        handlers.append(fh)
+    logging.basicConfig(level=level, handlers=handlers)
+logger = logging.getLogger("arb_bot.main")
+# ---------------------------------------------------------------------------
 # Deduplication
 # ---------------------------------------------------------------------------
 _seen: dict[str, float] = {}
