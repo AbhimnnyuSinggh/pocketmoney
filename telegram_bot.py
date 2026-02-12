@@ -744,10 +744,13 @@ class TelegramBotHandler:
                 for entry in all_entries:
                     entry_cat = ""
                     entry_title = ""
+                    entry_msg = ""
                     if isinstance(entry, dict):
                         entry_cat = entry.get("category", "").lower()
                         entry_title = entry.get("title", "").lower()
-                    text = f"{entry_title} {entry_cat}"
+                        entry_msg = entry.get("msg", "").lower()
+                    # Search category + title + message text for keywords
+                    text = f"{entry_title} {entry_cat} {entry_msg}"
                     if entry_cat == cat_key:
                         filtered.append(entry)
                     elif any(kw in text for kw in keywords):
