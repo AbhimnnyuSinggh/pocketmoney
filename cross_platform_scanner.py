@@ -173,6 +173,7 @@ class Opportunity:
     urls: list[str] = field(default_factory=list)
     risk_level: str = "low"
     hold_time: str = ""    # Estimated time until resolution
+    category: str = ""     # Market category (e.g. "Sports", "Crypto", "Politics")
 # =========================================================================
 # STRATEGY 1: Cross-Platform Arbitrage
 # =========================================================================
@@ -251,6 +252,7 @@ def find_cross_platform_arbs(
                 urls=[poly["url"], kalshi["url"]],
                 risk_level="very_low",
                 hold_time=poly.get("end_date", ""),
+                category=poly.get("category", ""),
             )
             opportunities.append(opp)
             logger.info(
@@ -301,6 +303,7 @@ def find_high_prob_bonds(
                 urls=[m.get("url", "")],
                 risk_level="low" if price >= 0.95 else "medium",
                 hold_time=m.get("end_date", ""),
+                category=m.get("category", ""),
             )
             opportunities.append(opp)
     # Sort by ROI descending
@@ -355,6 +358,7 @@ def find_mispriced_markets(
                 ],
                 urls=[m.get("url", "")],
                 risk_level="very_low",
+                category=m.get("category", ""),
             )
             opportunities.append(opp)
     opportunities.sort(key=lambda o: o.profit_pct, reverse=True)
