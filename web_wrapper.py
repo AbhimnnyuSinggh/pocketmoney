@@ -33,6 +33,11 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html")
         self.end_headers()
         self.wfile.write(html.encode())
+    def do_HEAD(self):
+        """Handle HEAD requests (used by UptimeRobot)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
     def log_message(self, format, *args):
         pass  # Suppress request logs
 def run_bot():
