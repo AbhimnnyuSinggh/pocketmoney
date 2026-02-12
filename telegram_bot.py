@@ -77,7 +77,7 @@ class TelegramBotHandler:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.token = cfg["telegram"].get("bot_token", "")
-        self.default_chat_id = cfg["telegram"].get("chat_id", "")
+        self.default_chat_id = str(cfg["telegram"].get("chat_id", ""))
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         self.enabled = bool(
             cfg["telegram"].get("enabled") and self.token and self.default_chat_id
@@ -453,36 +453,32 @@ class TelegramBotHandler:
         if past:
             time.sleep(0.5)
             header = (
-                f"📜 <b>LAST 24H {s['label'].upper()} SIGNALS</b>\n"
+                f"📜 <b>RECENT {s['label'].upper()} SIGNALS</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Showing {len(past)} signal"
-                f"{'s' if len(past) != 1 else ''} from the past 24 hours:"
+                f"Showing last {len(past)} signal"
+                f"{'s' if len(past) != 1 else ''}:"
             )
             self._send(chat_id, header)
             for entry in past[-10:]:
-                self._send(chat_id, entry["msg"])
+                msg = entry["msg"] if isinstance(entry, dict) else entry
+                self._send(chat_id, msg)
                 time.sleep(0.5)  # Respect rate limits
-    def _get_history_for(self, sig_key: str) -> list[dict]:
-        """Get past signals matching a signal type, from last 24 hours only."""
+    def _get_history_for(self, sig_key: str) -> list:
+        """Get the last 10 past signals matching a signal type."""
         s = SIGNAL_TYPES[sig_key]
-        cutoff = time.time() - 86400  # 24 hours in seconds
         if s["opp_types"] is None:
-            # "all" — collect from every type, last 24h
+            # "all" — collect from every type
             all_entries = []
             for entries in self.history.values():
-                for entry in entries:
-                    if isinstance(entry, dict) and entry.get("ts", 0) >= cutoff:
-                        all_entries.append(entry)
-            # Sort by timestamp, return last 10
-            all_entries.sort(key=lambda e: e.get("ts", 0))
+                all_entries.extend(entries)
+            # Sort by timestamp if available, return last 10
+            all_entries.sort(key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0)
             return all_entries[-10:]
         else:
             result = []
             for opp_type in s["opp_types"]:
-                for entry in self.history.get(opp_type, []):
-                    if isinstance(entry, dict) and entry.get("ts", 0) >= cutoff:
-                        result.append(entry)
-            result.sort(key=lambda e: e.get("ts", 0))
+                result.extend(self.history.get(opp_type, []))
+            result.sort(key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0)
             return result[-10:]
     # -----------------------------------------------------------------
     # Signal Distribution (called from scan cycle)
@@ -512,8 +508,9 @@ class TelegramBotHandler:
             self._save_history()
         # Get all registered users (or at least the default chat_id)
         users = dict(self.user_prefs)
-        if self.default_chat_id and self.default_chat_id not in users:
-            users[self.default_chat_id] = "all"
+        default_id = str(self.default_chat_id)
+        if default_id and default_id not in users:
+            users[default_id] = "all"
         # For each user, send matching signals
         for chat_id, sig_key in users.items():
             s = SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES["all"])
