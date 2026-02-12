@@ -1,19 +1,16 @@
 # ============================================================
 # Multi-Platform Prediction Market Arb Bot v2.0 — Config
 # ============================================================
-
 # ---------- Wallet / Auth ----------
 wallet:
   private_key: ""
   funder_address: ""
   signature_type: 1
-
 # ---------- Execution Mode ----------
 execution:
   mode: "dry_run"            # "dry_run" or "live"
   order_type: "limit"
   post_only: true
-
 # ---------- Bankroll & Risk ----------
 bankroll:
   total_usdc: 1000.0
@@ -21,7 +18,6 @@ bankroll:
   max_open_positions: 10
   min_profit_pct: 0.3        # Global minimum ROI % for any alert
   fee_buffer_cents: 0.5
-
 # ---------- Scanner ----------
 scanner:
   interval_seconds: 60       # 60 seconds (fetches from multiple platforms now)
@@ -34,21 +30,17 @@ scanner:
   max_liquidity: 10000000.0
   skip_closed: true
   orderbook_depth: 5
-
 # ---------- Cross-Platform Arbitrage Settings ----------
 cross_platform:
   min_profit_pct: 1.0        # Min ROI % for cross-platform arb alerts
   similarity_threshold: 0.60 # Title match threshold (0-1, lower = more matches)
-
 # ---------- High-Probability Bond Settings ----------
 bonds:
   min_price: 0.93            # Minimum price (93¢+) to consider as bond
   min_roi_pct: 0.5           # Min ROI % for bond alerts
-
 # ---------- Intra-Market Mispricing ----------
 mispricing:
   max_sum: 0.98              # YES + NO must be below this to trigger
-
 # ---------- Telegram Alerts ----------
 telegram:
   enabled: true
@@ -58,8 +50,23 @@ telegram:
   alert_on_execution: true
   alert_on_error: true
   min_alert_profit_pct: 0.3
-
+# ---------- Whale Tracking ----------
+whales:
+  enabled: true
+  min_trade_size: 1000       # Min USD size to consider "whale"
+  convergence_count: 3       # Number of whales needed for convergence alert
+  convergence_window_min: 60 # Window in minutes to check convergence
+  lookback_minutes: 120      # How far back to fetch trades
+# ---------- New Market Sniper ----------
+new_markets:
+  enabled: true
+  cache_file: "known_markets.json"
 # ---------- Logging ----------
+logging:
+  level: "INFO"
+  file: "arb_bot_v2.log"
+  console: true
+
 logging:
   level: "INFO"
   file: "arb_bot_v2.log"
