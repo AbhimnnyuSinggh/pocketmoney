@@ -1,12 +1,13 @@
 """
-telegram_bot.py — Interactive Telegram Bot with Signal Type Selection
-Users choose which signal type they want via beautiful inline keyboards.
+telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection
+Users choose which signal type AND category they want via inline keyboards.
 Only matching signals are delivered. Users can switch anytime.
 Commands:
-  /start  — Welcome screen + signal picker
-  /menu   — Change signal type
-  /help   — Show help
-  /status — Current selection + stats
+  /start    — Welcome screen + signal picker
+  /menu     — Change signal type
+  /category — Change category filter
+  /help     — Show help
+  /status   — Current selection + stats
 Signal Types:
   📡 All Signals     — Everything at once
   🔄 Arb Trading     — Cross-platform arbitrage
@@ -14,6 +15,19 @@ Signal Types:
   🎯 Intra-Market    — YES+NO mispricing
   🐋 Whale Tracker   — Whale convergence alerts
   🆕 New Markets     — Brand new market launches
+Categories:
+  🌐 All Categories  — No filter (default)
+  🏛 Politics        — Political markets
+  ⚽ Sports          — Sports betting
+  🪙 Crypto          — Cryptocurrency
+  💰 Finance         — Financial markets
+  🌍 Geopolitics     — Global events
+  💻 Tech            — Technology
+  🎭 Culture         — Entertainment & pop culture
+  📈 Earnings        — Company earnings
+  🌡 Climate & Science
+  🗳 Elections
+  📰 Breaking / Trending
 """
 import os
 import json
@@ -67,11 +81,86 @@ SIGNAL_TYPES = {
     },
 }
 # =========================================================================
+# Category Definitions
+# =========================================================================
+CATEGORIES = {
+    "all_cat": {
+        "emoji": "🌐",
+        "label": "All Categories",
+        "keywords": None,  # None = match all
+    },
+    "politics": {
+        "emoji": "🏛",
+        "label": "Politics",
+        "keywords": ["politics", "political", "government", "congress", "senate",
+                      "president", "democrat", "republican", "biden", "trump"],
+    },
+    "sports": {
+        "emoji": "⚽",
+        "label": "Sports",
+        "keywords": ["sports", "nfl", "nba", "mlb", "soccer", "football",
+                      "basketball", "baseball", "tennis", "cricket", "f1",
+                      "olympics", "ufc", "boxing", "hockey", "golf"],
+    },
+    "crypto": {
+        "emoji": "🪙",
+        "label": "Crypto",
+        "keywords": ["crypto", "bitcoin", "ethereum", "btc", "eth", "solana",
+                      "defi", "blockchain", "web3", "token", "nft"],
+    },
+    "finance": {
+        "emoji": "💰",
+        "label": "Finance",
+        "keywords": ["finance", "stock", "market", "fed", "interest rate",
+                      "inflation", "gdp", "recession", "economy", "bank",
+                      "treasury", "s&p", "nasdaq", "dow"],
+    },
+    "geopolitics": {
+        "emoji": "🌍",
+        "label": "Geopolitics",
+        "keywords": ["geopolitics", "war", "conflict", "nato", "china",
+                      "russia", "ukraine", "sanctions", "trade war",
+                      "diplomacy", "un", "military"],
+    },
+    "tech": {
+        "emoji": "💻",
+        "label": "Tech",
+        "keywords": ["tech", "technology", "ai", "artificial intelligence",
+                      "apple", "google", "meta", "microsoft", "openai",
+                      "spacex", "tesla", "semiconductor"],
+    },
+    "culture": {
+        "emoji": "🎭",
+        "label": "Culture",
+        "keywords": ["culture", "entertainment", "movie", "music", "celebrity",
+                      "oscar", "grammy", "award", "tv", "streaming",
+                      "tiktok", "viral", "social media"],
+    },
+    "earnings": {
+        "emoji": "📈",
+        "label": "Earnings",
+        "keywords": ["earnings", "revenue", "quarterly", "q1", "q2", "q3", "q4",
+                      "profit", "eps", "guidance", "ipo"],
+    },
+    "climate": {
+        "emoji": "🌡",
+        "label": "Climate & Science",
+        "keywords": ["climate", "weather", "temperature", "hurricane", "science",
+                      "space", "nasa", "environment", "carbon", "renewable"],
+    },
+    "elections": {
+        "emoji": "🗳",
+        "label": "Elections",
+        "keywords": ["election", "vote", "ballot", "primary", "midterm",
+                      "governor", "mayor", "poll", "swing state", "electoral"],
+    },
+}
+# =========================================================================
 # Interactive Bot Handler
 # =========================================================================
 class TelegramBotHandler:
     """
-    Interactive Telegram bot that lets users choose signal types.
+    Interactive Telegram bot that lets users choose signal types + categories.
     Runs a polling thread alongside the main scan loop.
     """
     def __init__(self, cfg: dict):
@@ -83,11 +172,11 @@ class TelegramBotHandler:
         self.enabled = bool(
             cfg["telegram"].get("enabled") and self.token and self.default_chat_id
         )
-        # Preferences file — stores {chat_id_str: signal_type_key}
+        # Preferences file — stores user signal + category prefs
         self.prefs_file = cfg.get("interactive", {}).get(
             "prefs_file", "user_prefs.json"
         )
-        self.user_prefs: dict[str, str] = self._load_prefs()
+        self.user_prefs: dict[str, dict] = self._load_prefs()
         # Signal history — persisted to disk so it survives restarts
         self.history_file = cfg.get("interactive", {}).get(
             "history_file", "signal_history.json"
@@ -114,8 +203,17 @@ class TelegramBotHandler:
             with open(self.prefs_file, "r") as f:
                 data = json.load(f)
             raw = data.get("users", data) if isinstance(data, dict) else {}
-            # Force all keys to strings
-            return {str(k): v for k, v in raw.items()}
+            result = {}
+            for k, v in raw.items():
+                k = str(k)
+                if isinstance(v, str):
+                    # Backward compat: old format was {"chat_id": "signal_key"}
+                    result[k] = {"signal": v, "category": "all_cat"}
+                elif isinstance(v, dict):
+                    result[k] = v
+                else:
+                    result[k] = {"signal": "all", "category": "all_cat"}
+            return result
         except (json.JSONDecodeError, IOError):
             return {}
     def _save_prefs(self):
@@ -162,6 +260,63 @@ class TelegramBotHandler:
                 json.dump(data, f, indent=2)
         except IOError as e:
             logger.error(f"Failed to save signal history: {e}")
+    # -----------------------------------------------------------------
+    # Preference helpers
+    # -----------------------------------------------------------------
+    def _get_signal(self, chat_id: str) -> str:
+        """Get user's selected signal type key."""
+        pref = self.user_prefs.get(chat_id, {})
+        if isinstance(pref, str):
+            return pref  # backward compat
+        return pref.get("signal", "all")
+    def _get_category(self, chat_id: str) -> str:
+        """Get user's selected category key."""
+        pref = self.user_prefs.get(chat_id, {})
+        if isinstance(pref, str):
+            return "all_cat"
+        return pref.get("category", "all_cat")
+    def _set_signal(self, chat_id: str, sig_key: str):
+        """Set user's signal type."""
+        pref = self.user_prefs.get(chat_id, {})
+        if isinstance(pref, str):
+            pref = {"signal": pref, "category": "all_cat"}
+        pref["signal"] = sig_key
+        self.user_prefs[chat_id] = pref
+    def _set_category(self, chat_id: str, cat_key: str):
+        """Set user's category filter."""
+        pref = self.user_prefs.get(chat_id, {})
+        if isinstance(pref, str):
+            pref = {"signal": pref, "category": "all_cat"}
+        pref["category"] = cat_key
+        self.user_prefs[chat_id] = pref
+    # -----------------------------------------------------------------
+    # Category matching
+    # -----------------------------------------------------------------
+    @staticmethod
+    def _matches_category(opp: Opportunity, cat_key: str) -> bool:
+        """
+        Check if an opportunity matches the selected category.
+        Matches by: (1) exact category field, or (2) keyword in title.
+        Whale signals (no category) always match.
+        """
+        if cat_key == "all_cat":
+            return True
+        cat_info = CATEGORIES.get(cat_key)
+        if not cat_info or cat_info["keywords"] is None:
+            return True
+        # Whale signals don't have category data — always include them
+        if opp.opp_type == "whale_convergence" and not opp.category:
+            return True
+        # Match by Polymarket category field (exact)
+        opp_cat = opp.category.lower().strip()
+        if opp_cat and opp_cat == cat_key:
+            return True
+        # Match by keywords in title or category
+        text = f"{opp.title} {opp.category}".lower()
+        for keyword in cat_info["keywords"]:
+            if keyword in text:
+                return True
+        return False
     # -----------------------------------------------------------------
     # Telegram API helpers
     # -----------------------------------------------------------------
@@ -216,13 +371,28 @@ class TelegramBotHandler:
         if row:
             buttons.append(row)
         return {"inline_keyboard": buttons}
+    def _category_keyboard(self, current: str | None = None) -> dict:
+        """Build a 2-column inline keyboard for category selection."""
+        buttons = []
+        row: list[dict] = []
+        for key, info in CATEGORIES.items():
+            check = "▸ " if current == key else ""
+            label = f"{check}{info['emoji']} {info['label']}"
+            row.append({"text": label, "callback_data": f"cat:{key}"})
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        return {"inline_keyboard": buttons}
     @staticmethod
     def _menu_button() -> dict:
-        """Small 'Switch' button appended after signals."""
+        """Small button row appended after signals."""
         return {
             "inline_keyboard": [
                 [
                     {"text": "📋 Menu", "callback_data": "cmd:menu"},
+                    {"text": "🏷 Category", "callback_data": "cmd:category"},
                     {"text": "ℹ️ Help", "callback_data": "cmd:help"},
                 ]
             ]
@@ -283,6 +453,8 @@ class TelegramBotHandler:
                 self._cmd_start(chat_id)
             elif text in ("/menu", "/switch"):
                 self._cmd_menu(chat_id)
+            elif text == "/category":
+                self._cmd_category(chat_id)
             elif text == "/help":
                 self._cmd_help(chat_id)
             elif text == "/status":
@@ -300,8 +472,18 @@ class TelegramBotHandler:
                 self._answer_callback(cb_id, f"✅ {SIGNAL_TYPES[sig_key]['label']}")
             else:
                 self._answer_callback(cb_id)
+        elif data.startswith("cat:"):
+            cat_key = data[4:]
+            if cat_key in CATEGORIES:
+                self._select_category(chat_id, cat_key)
+                self._answer_callback(cb_id, f"✅ {CATEGORIES[cat_key]['label']}")
+            else:
+                self._answer_callback(cb_id)
         elif data == "cmd:menu":
             self._cmd_menu(chat_id)
+            self._answer_callback(cb_id)
+        elif data == "cmd:category":
+            self._cmd_category(chat_id)
             self._answer_callback(cb_id)
         elif data == "cmd:help":
             self._cmd_help(chat_id)
@@ -312,12 +494,15 @@ class TelegramBotHandler:
     # Commands
     # -----------------------------------------------------------------
     def _cmd_start(self, chat_id: str):
-        current = self.user_prefs.get(chat_id)
+        current_sig = self._get_signal(chat_id)
+        current_cat = self._get_category(chat_id)
         current_label = ""
-        if current and current in SIGNAL_TYPES:
-            s = SIGNAL_TYPES[current]
+        if current_sig and current_sig in SIGNAL_TYPES:
+            s = SIGNAL_TYPES[current_sig]
+            c = CATEGORIES.get(current_cat, CATEGORIES["all_cat"])
             current_label = (
-                f"\n📌 Current: <b>{s['emoji']} {s['label']}</b>\n"
+                f"\n📌 Signal: <b>{s['emoji']} {s['label']}</b>\n"
+                f"🏷 Category: <b>{c['emoji']} {c['label']}</b>\n"
             )
         msg = (
             f"🤖 <b>Polymarket Arb Bot v2.0</b>\n"
@@ -326,7 +511,7 @@ class TelegramBotHandler:
             f"I scan Polymarket & Kalshi 24/7 for\n"
             f"profitable opportunities.\n"
             f"{current_label}\n"
-            f"<b>Choose your signal type:</b>\n"
+            f"<b>Step 1: Choose your signal type:</b>\n"
             f"\n"
             f"📡 <b>All Signals</b> — Everything at once\n"
             f"🔄 <b>Arb Trading</b> — Cross-platform gaps\n"
@@ -338,40 +523,63 @@ class TelegramBotHandler:
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👇 <b>Tap below to select:</b>"
         )
-        self._send(chat_id, msg, self._signal_keyboard(current))
-        # Auto-register with default chat_id
+        self._send(chat_id, msg, self._signal_keyboard(current_sig))
+        # Auto-register with defaults
         if chat_id not in self.user_prefs:
-            self.user_prefs[chat_id] = "all"
+            self.user_prefs[chat_id] = {"signal": "all", "category": "all_cat"}
             self._save_prefs()
     def _cmd_menu(self, chat_id: str):
-        current = self.user_prefs.get(chat_id, "all")
-        s = SIGNAL_TYPES.get(current, SIGNAL_TYPES["all"])
+        current_sig = self._get_signal(chat_id)
+        current_cat = self._get_category(chat_id)
+        s = SIGNAL_TYPES.get(current_sig, SIGNAL_TYPES["all"])
+        c = CATEGORIES.get(current_cat, CATEGORIES["all_cat"])
         msg = (
             f"📋 <b>SIGNAL MENU</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"Current: <b>{s['emoji']} {s['label']}</b>\n"
-            f"<i>{s['desc']}</i>\n"
+            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Category: <b>{c['emoji']} {c['label']}</b>\n"
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👇 <b>Tap to switch:</b>"
+            f"👇 <b>Tap to change signal type:</b>"
         )
-        self._send(chat_id, msg, self._signal_keyboard(current))
+        self._send(chat_id, msg, self._signal_keyboard(current_sig))
+    def _cmd_category(self, chat_id: str):
+        current_cat = self._get_category(chat_id)
+        current_sig = self._get_signal(chat_id)
+        s = SIGNAL_TYPES.get(current_sig, SIGNAL_TYPES["all"])
+        c = CATEGORIES.get(current_cat, CATEGORIES["all_cat"])
+        msg = (
+            f"🏷 <b>CATEGORY FILTER</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Category: <b>{c['emoji']} {c['label']}</b>\n"
+            f"\n"
+            f"Pick a category to only receive signals\n"
+            f"from your area of expertise:\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👇 <b>Tap to change category:</b>"
+        )
+        self._send(chat_id, msg, self._category_keyboard(current_cat))
     def _cmd_help(self, chat_id: str):
         msg = (
             f"ℹ️ <b>BOT HELP</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
             f"<b>Commands:</b>\n"
-            f"/start  — Welcome + pick signal type\n"
-            f"/menu   — Switch signal type\n"
-            f"/status — View current stats\n"
-            f"/help   — This message\n"
+            f"/start    — Welcome + pick signal type\n"
+            f"/menu     — Switch signal type\n"
+            f"/category — Filter by category\n"
+            f"/status   — View current stats\n"
+            f"/help     — This message\n"
             f"\n"
             f"<b>How it works:</b>\n"
-            f"1️⃣ Pick a signal type\n"
-            f"2️⃣ Receive only those signals\n"
-            f"3️⃣ Use /menu to switch anytime\n"
+            f"1️⃣ Pick a signal type (Bonds, Arb, etc.)\n"
+            f"2️⃣ Optionally pick a category (Sports, Crypto...)\n"
+            f"3️⃣ Receive only matching signals\n"
+            f"4️⃣ Use /menu or /category to switch anytime\n"
             f"\n"
             f"<b>Signal types:</b>\n"
             f"📡 All — Every signal\n"
@@ -381,12 +589,20 @@ class TelegramBotHandler:
             f"🐋 Whales — Big traders converging\n"
             f"🆕 New — Brand new markets\n"
             f"\n"
-            f"Tap /menu to change your signal."
+            f"<b>Categories:</b>\n"
+            f"🌐 All — No filter (default)\n"
+            f"⚽ Sports • 🪙 Crypto • 🏛 Politics\n"
+            f"💰 Finance • 🌍 Geopolitics • 💻 Tech\n"
+            f"🎭 Culture • 📈 Earnings • 🗳 Elections\n"
+            f"\n"
+            f"Tap /menu or /category to change settings."
         )
         self._send(chat_id, msg)
     def _cmd_status(self, chat_id: str):
-        current = self.user_prefs.get(chat_id, "all")
-        s = SIGNAL_TYPES.get(current, SIGNAL_TYPES["all"])
+        current_sig = self._get_signal(chat_id)
+        current_cat = self._get_category(chat_id)
+        s = SIGNAL_TYPES.get(current_sig, SIGNAL_TYPES["all"])
+        c = CATEGORIES.get(current_cat, CATEGORIES["all_cat"])
         uptime = int(time.time() - self.start_time)
         hours, rem = divmod(uptime, 3600)
         mins = rem // 60
@@ -402,7 +618,8 @@ class TelegramBotHandler:
             f"📊 <b>BOT STATUS</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"Your signal: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Category: <b>{c['emoji']} {c['label']}</b>\n"
             f"Uptime: {hours}h {mins}m\n"
             f"Total signals sent: <b>{self.signals_sent}</b>\n"
             f"\n"
@@ -414,7 +631,7 @@ class TelegramBotHandler:
             )
         msg += (
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Use /menu to switch signals."
+            f"Use /menu or /category to change."
         )
         self._send(chat_id, msg)
     def _cmd_reset(self, chat_id: str):
@@ -426,43 +643,73 @@ class TelegramBotHandler:
     # Signal type selection + history replay
     # -----------------------------------------------------------------
     def _select_signal(self, chat_id: str, sig_key: str):
-        """User selected a signal type. Confirm + replay past signals."""
+        """User selected a signal type. Confirm + show category picker."""
         if sig_key not in SIGNAL_TYPES:
             return
         s = SIGNAL_TYPES[sig_key]
-        # Save preference
+        # Save signal preference
         with self._lock:
-            self.user_prefs[chat_id] = sig_key
+            self._set_signal(chat_id, sig_key)
             self._save_prefs()
             logger.info(f"User {chat_id} selected signal type: {sig_key}")
-        # Confirmation message
+        current_cat = self._get_category(chat_id)
+        c = CATEGORIES.get(current_cat, CATEGORIES["all_cat"])
+        # Confirmation + prompt for category
         confirm = (
             f"✅ <b>Signal type updated!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"Now receiving: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
             f"<i>{s['desc']}</i>\n"
             f"\n"
+            f"Category: <b>{c['emoji']} {c['label']}</b>\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🏷 <b>Step 2 (optional):</b> Want to filter by category?\n"
+            f"Tap below or skip — you'll get all categories by default."
         )
+        self._send(chat_id, confirm, self._category_keyboard(current_cat))
+    def _select_category(self, chat_id: str, cat_key: str):
+        """User selected a category. Confirm + replay matching history."""
+        if cat_key not in CATEGORIES:
+            return
+        c = CATEGORIES[cat_key]
+        # Save category preference
+        with self._lock:
+            self._set_category(chat_id, cat_key)
+            self._save_prefs()
+            logger.info(f"User {chat_id} selected category: {cat_key}")
+        current_sig = self._get_signal(chat_id)
+        s = SIGNAL_TYPES.get(current_sig, SIGNAL_TYPES["all"])
         # Count available past signals
-        past = self._get_history_for(sig_key)
+        past = self._get_history_for(current_sig, cat_key)
+        confirm = (
+            f"✅ <b>Category updated!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
+            f"Category: <b>{c['emoji']} {c['label']}</b>\n"
+            f"\n"
+        )
         if past:
             confirm += (
-                f"📜 Sending <b>{len(past)}</b> recent signal"
+                f"📜 Sending <b>{len(past)}</b> recent matching signal"
                 f"{'s' if len(past) != 1 else ''}...\n"
             )
         else:
-            confirm += f"📭 No past signals yet — they'll arrive soon!\n"
+            confirm += f"📭 No past signals matching this combo yet!\n"
         confirm += (
             f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Use /menu to switch anytime."
+            f"Use /menu or /category to switch anytime."
         )
         self._send(chat_id, confirm)
-        # Replay past signals (max 10)
+        # Replay past signals
         if past:
             time.sleep(0.5)
             header = (
-                f"📜 <b>RECENT {s['label'].upper()} SIGNALS</b>\n"
+                f"📜 <b>RECENT {s['label'].upper()}"
+                f"{' — ' + c['label'].upper() if cat_key != 'all_cat' else ''}"
+                f" SIGNALS</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"Showing last {len(past)} signal"
                 f"{'s' if len(past) != 1 else ''}:"
@@ -471,32 +718,50 @@ class TelegramBotHandler:
             for entry in past[-10:]:
                 msg = entry["msg"] if isinstance(entry, dict) else entry
                 self._send(chat_id, msg)
-                time.sleep(0.5)  # Respect rate limits
-    def _get_history_for(self, sig_key: str) -> list:
-        """Get the last 10 past signals matching a signal type."""
-        s = SIGNAL_TYPES[sig_key]
+                time.sleep(0.5)
+    def _get_history_for(self, sig_key: str, cat_key: str = "all_cat") -> list:
+        """Get the last 10 past signals matching signal type + category."""
+        s = SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES["all"])
+        # Collect entries matching signal type
         if s["opp_types"] is None:
-            # "all" — collect from every type
             all_entries = []
             for entries in self.history.values():
                 all_entries.extend(entries)
-            all_entries.sort(key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0)
-            return all_entries[-10:]
         else:
-            result = []
+            all_entries = []
             for opp_type in s["opp_types"]:
-                result.extend(self.history.get(opp_type, []))
-            result.sort(key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0)
-            return result[-10:]
+                all_entries.extend(self.history.get(opp_type, []))
+        # Sort by timestamp
+        all_entries.sort(
+            key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0
+        )
+        # Filter by category (if history entries have category info)
+        if cat_key != "all_cat":
+            cat_info = CATEGORIES.get(cat_key, {})
+            keywords = cat_info.get("keywords", [])
+            if keywords:
+                filtered = []
+                for entry in all_entries:
+                    entry_cat = ""
+                    entry_title = ""
+                    if isinstance(entry, dict):
+                        entry_cat = entry.get("category", "").lower()
+                        entry_title = entry.get("title", "").lower()
+                    text = f"{entry_title} {entry_cat}"
+                    if entry_cat == cat_key:
+                        filtered.append(entry)
+                    elif any(kw in text for kw in keywords):
+                        filtered.append(entry)
+                all_entries = filtered
+        return all_entries[-10:]
     # -----------------------------------------------------------------
     # Signal Distribution (called from scan cycle)
     # -----------------------------------------------------------------
     def distribute_signals(self, opportunities: list[Opportunity], cfg: dict):
         """
-        Send opportunities to all registered users, filtered by preference.
-        Also stores signals in history for replay.
+        Send opportunities to all registered users, filtered by
+        signal type AND category preference.
         THIS IS THE ONLY PATH FOR SENDING SIGNALS.
-        All signals go through here — no more bypassing the filter.
         """
         if not self.enabled or not opportunities:
             return
@@ -504,11 +769,16 @@ class TelegramBotHandler:
         filtered = [o for o in opportunities if o.profit_pct >= min_pct]
         if not filtered:
             return
-        # Store in history
+        # Store in history (with category info for replay filtering)
         now = time.time()
         for opp in filtered:
             msg = format_opportunity(opp)
-            entry = {"ts": now, "msg": msg}
+            entry = {
+                "ts": now,
+                "msg": msg,
+                "category": opp.category,
+                "title": opp.title,
+            }
             with self._lock:
                 self.history[opp.opp_type].append(entry)
         # Persist history to disk
@@ -520,34 +790,53 @@ class TelegramBotHandler:
         # Add default chat_id ONLY if not already registered
         default_id = str(self.default_chat_id)
         if default_id and default_id not in users:
-            users[default_id] = "all"
+            users[default_id] = {"signal": "all", "category": "all_cat"}
         logger.info(
             f"Distributing {len(filtered)} signals to {len(users)} user(s): "
-            f"{', '.join(f'{cid}={sk}' for cid, sk in users.items())}"
+            f"{', '.join(f'{cid}={p}' for cid, p in users.items())}"
         )
-        # For each user, send ONLY matching signals
-        for chat_id, sig_key in users.items():
+        # For each user, filter by signal type AND category
+        for chat_id, pref in users.items():
+            # Handle both old and new format
+            if isinstance(pref, str):
+                sig_key = pref
+                cat_key = "all_cat"
+            else:
+                sig_key = pref.get("signal", "all")
+                cat_key = pref.get("category", "all_cat")
             s = SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES["all"])
+            c = CATEGORIES.get(cat_key, CATEGORIES["all_cat"])
             want_types = s["opp_types"]  # None means all
-            # Filter opportunities for this user's chosen type
+            # Filter by signal type
             user_opps = []
             for opp in filtered:
-                if want_types is None or opp.opp_type in want_types:
-                    user_opps.append(opp)
+                if want_types is not None and opp.opp_type not in want_types:
+                    continue
+                # Filter by category
+                if not self._matches_category(opp, cat_key):
+                    continue
+                user_opps.append(opp)
             if not user_opps:
                 logger.info(
-                    f"  User {chat_id} ({sig_key}): 0 matching — skipping"
+                    f"  User {chat_id} ({sig_key}+{cat_key}): "
+                    f"0 matching — skipping"
                 )
                 continue
             logger.info(
-                f"  User {chat_id} ({sig_key}): sending {len(user_opps)} signals"
+                f"  User {chat_id} ({sig_key}+{cat_key}): "
+                f"sending {len(user_opps)} signals"
             )
             # Send summary header
             type_counts: dict[str, int] = {}
             for o in user_opps:
                 type_counts[o.opp_type] = type_counts.get(o.opp_type, 0) + 1
+            cat_label = (
+                f" — {c['emoji']} {c['label']}"
+                if cat_key != "all_cat" else ""
+            )
             summary = (
-                f"📡 <b>{s['emoji']} {s['label'].upper()} — SCAN RESULTS</b>\n"
+                f"📡 <b>{s['emoji']} {s['label'].upper()}"
+                f"{cat_label} — SCAN RESULTS</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"Found <b>{len(user_opps)}</b> signal"
                 f"{'s' if len(user_opps) != 1 else ''}:\n"
@@ -573,6 +862,6 @@ class TelegramBotHandler:
             if self.signals_sent % 5 == 0:
                 self._send(
                     chat_id,
-                    f"💡 <i>Use /menu to switch signal types</i>",
+                    f"💡 <i>Use /menu or /category to change filters</i>",
                     self._menu_button(),
                 )
