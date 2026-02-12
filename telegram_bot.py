@@ -76,13 +76,14 @@ class TelegramBotHandler:
     """
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.token = cfg["telegram"].get("bot_token", "")
+        self.token = str(cfg["telegram"].get("bot_token", ""))
+        # CRITICAL: Force chat_id to string so it matches Telegram callback IDs
         self.default_chat_id = str(cfg["telegram"].get("chat_id", ""))
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         self.enabled = bool(
             cfg["telegram"].get("enabled") and self.token and self.default_chat_id
         )
-        # Preferences file — stores {chat_id: signal_type_key}
+        # Preferences file — stores {chat_id_str: signal_type_key}
         self.prefs_file = cfg.get("interactive", {}).get(
             "prefs_file", "user_prefs.json"
         )
@@ -99,6 +100,10 @@ class TelegramBotHandler:
         self._last_update_id = 0
         self._lock = threading.Lock()
         self._running = False
+        logger.info(
+            f"Bot handler init: default_chat_id={self.default_chat_id!r}, "
+            f"prefs={self.user_prefs}, enabled={self.enabled}"
+        )
     # -----------------------------------------------------------------
     # Persistence
     # -----------------------------------------------------------------
@@ -108,7 +113,9 @@ class TelegramBotHandler:
         try:
             with open(self.prefs_file, "r") as f:
                 data = json.load(f)
-                return data.get("users", data) if isinstance(data, dict) else {}
+            raw = data.get("users", data) if isinstance(data, dict) else {}
+            # Force all keys to strings
+            return {str(k): v for k, v in raw.items()}
         except (json.JSONDecodeError, IOError):
             return {}
     def _save_prefs(self):
@@ -121,7 +128,7 @@ class TelegramBotHandler:
         except IOError as e:
             logger.error(f"Failed to save prefs: {e}")
     def _load_history(self) -> dict[str, deque]:
-        """Load signal history from disk. Each entry: {"ts": epoch, "msg": text}."""
+        """Load signal history from disk."""
         history: dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
         if not os.path.exists(self.history_file):
             return history
@@ -131,11 +138,9 @@ class TelegramBotHandler:
             for opp_type, entries in data.get("signals", {}).items():
                 valid = []
                 for entry in entries:
-                    # Support both old format (plain string) and new (dict with ts)
-                    if isinstance(entry, dict) and "ts" in entry and "msg" in entry:
+                    if isinstance(entry, dict) and "msg" in entry:
                         valid.append(entry)
                     elif isinstance(entry, str):
-                        # Old format — assign current time so it expires in 24h
                         valid.append({"ts": time.time(), "msg": entry})
                 history[opp_type] = deque(valid, maxlen=50)
             logger.info(
@@ -198,7 +203,7 @@ class TelegramBotHandler:
     # Keyboards
     # -----------------------------------------------------------------
     def _signal_keyboard(self, current: str | None = None) -> dict:
-        """Build the 3×2 inline keyboard for signal type selection."""
+        """Build the 3x2 inline keyboard for signal type selection."""
         buttons = []
         row: list[dict] = []
         for key, info in SIGNAL_TYPES.items():
@@ -290,8 +295,11 @@ class TelegramBotHandler:
         chat_id = str(cb["message"]["chat"]["id"])
         if data.startswith("sig:"):
             sig_key = data[4:]
-            self._select_signal(chat_id, sig_key)
-            self._answer_callback(cb_id, f"✅ {SIGNAL_TYPES[sig_key]['label']}")
+            if sig_key in SIGNAL_TYPES:
+                self._select_signal(chat_id, sig_key)
+                self._answer_callback(cb_id, f"✅ {SIGNAL_TYPES[sig_key]['label']}")
+            else:
+                self._answer_callback(cb_id)
         elif data == "cmd:menu":
             self._cmd_menu(chat_id)
             self._answer_callback(cb_id)
@@ -426,6 +434,7 @@ class TelegramBotHandler:
         with self._lock:
             self.user_prefs[chat_id] = sig_key
             self._save_prefs()
+            logger.info(f"User {chat_id} selected signal type: {sig_key}")
         # Confirmation message
         confirm = (
             f"✅ <b>Signal type updated!</b>\n"
@@ -471,7 +480,6 @@ class TelegramBotHandler:
             all_entries = []
             for entries in self.history.values():
                 all_entries.extend(entries)
-            # Sort by timestamp if available, return last 10
             all_entries.sort(key=lambda e: e.get("ts", 0) if isinstance(e, dict) else 0)
             return all_entries[-10:]
         else:
@@ -487,6 +495,8 @@ class TelegramBotHandler:
         """
         Send opportunities to all registered users, filtered by preference.
         Also stores signals in history for replay.
+        THIS IS THE ONLY PATH FOR SENDING SIGNALS.
+        All signals go through here — no more bypassing the filter.
         """
         if not self.enabled or not opportunities:
             return
@@ -494,34 +504,44 @@ class TelegramBotHandler:
         filtered = [o for o in opportunities if o.profit_pct >= min_pct]
         if not filtered:
             return
-        # Store in history + format
-        formatted: dict[str, list[str]] = defaultdict(list)
+        # Store in history
         now = time.time()
         for opp in filtered:
             msg = format_opportunity(opp)
             entry = {"ts": now, "msg": msg}
             with self._lock:
                 self.history[opp.opp_type].append(entry)
-            formatted[opp.opp_type].append(msg)
         # Persist history to disk
         with self._lock:
             self._save_history()
-        # Get all registered users (or at least the default chat_id)
-        users = dict(self.user_prefs)
+        # Build user list — ALWAYS use string keys
+        with self._lock:
+            users = dict(self.user_prefs)
+        # Add default chat_id ONLY if not already registered
         default_id = str(self.default_chat_id)
         if default_id and default_id not in users:
             users[default_id] = "all"
-        # For each user, send matching signals
+        logger.info(
+            f"Distributing {len(filtered)} signals to {len(users)} user(s): "
+            f"{', '.join(f'{cid}={sk}' for cid, sk in users.items())}"
+        )
+        # For each user, send ONLY matching signals
         for chat_id, sig_key in users.items():
             s = SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES["all"])
             want_types = s["opp_types"]  # None means all
-            # Filter opportunities for this user
+            # Filter opportunities for this user's chosen type
             user_opps = []
             for opp in filtered:
                 if want_types is None or opp.opp_type in want_types:
                     user_opps.append(opp)
             if not user_opps:
+                logger.info(
+                    f"  User {chat_id} ({sig_key}): 0 matching — skipping"
+                )
                 continue
+            logger.info(
+                f"  User {chat_id} ({sig_key}): sending {len(user_opps)} signals"
+            )
             # Send summary header
             type_counts: dict[str, int] = {}
             for o in user_opps:
