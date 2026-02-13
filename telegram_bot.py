@@ -1747,6 +1747,9 @@ class TelegramBotHandler:
                         continue
                     if not self._matches_category(opp, cat_key):
                         continue
+                    # Bug #2 Fix: Don't count whale/sniper as valid missed if user can't see them anyway
+                    if opp.opp_type in ["whale_convergence", "new_market"] and tier == "free":
+                        continue
                     missed_opps.append(opp)
                 if missed_opps:
                     # HOOK 2: Weekly free preview (one taste per week)
@@ -1771,8 +1774,8 @@ class TelegramBotHandler:
             user_seen = self._user_seen.setdefault(chat_id, {})
             user_opps = []
             for opp in filtered:
-                # STRICT TIER ENFORCEMENT: Whale/Sniper features
-                if opp.opp_type in ["whale_convergence", "new_market"] and tier != "whale_tier":
+                # Bug #1 Fix: Allow Pro users to see whale/sniper (only block free)
+                if opp.opp_type in ["whale_convergence", "new_market"] and tier == "free":
                     continue
                 if want_types is not None and opp.opp_type not in want_types:
                     continue
@@ -1820,6 +1823,11 @@ class TelegramBotHandler:
                 f"Found <b>{len(user_opps)}</b> signal"
                 f"{'s' if len(user_opps) != 1 else ''}:\n"
             )
+            
+            # Bug #3 Fix: Warn free users about delay immediately
+            if tier == "free":
+                summary += f"\n🕐 Signals will arrive in 30 minutes"
+                summary += f"\n💡 /upgrade for instant delivery\n"
             type_labels = {
                 "cross_platform_arb": "🔄 Arb",
                 "high_prob_bond": "🏦 Bonds",
@@ -1867,3 +1875,4 @@ class TelegramBotHandler:
                     f"💡 <i>/menu to switch signals · /category to filter · /upgrade for Pro</i>",
                     self._menu_button(),
                 )
+
