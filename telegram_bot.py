@@ -1,7 +1,4 @@
 
-telegram_bot.py
-
-
 """
 telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection + Monetization
 Users choose signal type AND category via inline keyboards.
@@ -262,6 +259,7 @@ class TelegramBotHandler:
         self.enabled = bool(
             cfg["telegram"].get("enabled") and self.token and self.default_chat_id
         )
+        self.bot_name = cfg["telegram"].get("bot_name", "PocketMoney")
         # Preferences file — stores {chat_id: {"signal": key, "category": key}}
         self.prefs_file = cfg.get("interactive", {}).get(
             "prefs_file", "user_prefs.json"
@@ -534,7 +532,7 @@ class TelegramBotHandler:
             duration_secs = SUB_MONTHLY
         payload = {
             "chat_id": chat_id,
-            "title": f"PocketMoney {tier['label']} — {desc_suffix}",
+            "title": f"{self.bot_name} {tier['label']} — {desc_suffix}",
             "description": self._tier_invoice_desc(tier_key),
             "payload": f"sub:{tier_key}:{dur}:{chat_id}:{int(time.time())}",
             "currency": "XTR",  # Telegram Stars
@@ -919,7 +917,7 @@ class TelegramBotHandler:
             f"✅ All 6 signal types unlocked\n"
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Thank you for supporting PocketMoney! 🚀"
+            f"Thank you for supporting {self.bot_name}! 🚀"
         )
         self._send(chat_id, confirm_msg)
         logger.info(f"✅ Subscription activated: {chat_id} → {tier_key} until {expiry_str}")
@@ -941,7 +939,7 @@ class TelegramBotHandler:
         tier_info = TIERS.get(tier, TIERS["free"])
         tier_label = f"{tier_info['emoji']} {tier_info['label']}"
         msg = (
-            f"🤖 <b>PocketMoney — Prediction Market Signals</b>\n"
+            f"🤖 <b>{self.bot_name} — Prediction Market Signals</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
             f"I scan 4,000+ markets on Polymarket &\n"
@@ -1078,7 +1076,9 @@ class TelegramBotHandler:
             msg += f"Today: <b>{daily_used}/5</b> signals used\n"
         else:
             expiry = sub.get("expires_at", 0)
-            if expiry > 0:
+            if str(chat_id) == self.default_chat_id:
+                msg += f"Expires: <b>Lifetime (Admin)</b>\n"
+            elif expiry > 0:
                 exp_str = datetime.fromtimestamp(
                     expiry, tz=timezone.utc
                 ).strftime("%b %d, %Y")
@@ -1110,10 +1110,15 @@ class TelegramBotHandler:
             tier_info = TIERS.get(tier, TIERS["free"])
             sub = self._get_user_sub(chat_id)
             expiry = sub.get("expires_at", 0)
-            days_left = max(0, int((expiry - time.time()) / 86400))
-            exp_str = datetime.fromtimestamp(
-                expiry, tz=timezone.utc
-            ).strftime("%b %d, %Y")
+            
+            if str(chat_id) == self.default_chat_id:
+                exp_str = "Lifetime (Admin)"
+                days_left = "∞"
+            else:
+                days_left = max(0, int((expiry - time.time()) / 86400))
+                exp_str = datetime.fromtimestamp(
+                    expiry, tz=timezone.utc
+                ).strftime("%b %d, %Y")
             msg = (
                 f"✅ <b>YOU'RE ON {tier_info['label'].upper()}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1397,7 +1402,7 @@ class TelegramBotHandler:
             f"✅ Zero delay on all alerts\n"
             f"✅ All 6 signal types unlocked\n"
             f"\n"
-            f"Thank you for supporting PocketMoney! 🚀"
+            f"Thank you for supporting {self.bot_name}! 🚀"
         )
         self._send(user_id, user_msg)
         logger.info(f"Admin approved payment: {user_id} → {tier_key} ({period}) until {exp_str}")
