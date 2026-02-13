@@ -789,13 +789,6 @@ class TelegramBotHandler:
                 self._answer_callback(cb_id, f"✅ {CATEGORIES[cat_key]['label']}")
             else:
                 self._answer_callback(cb_id)
-        elif data.startswith("buy:"):
-            tier_key = data[4:]
-            if tier_key in TIERS and TIERS[tier_key]["price_stars"] > 0:
-                self._send_invoice(chat_id, tier_key)
-                self._answer_callback(cb_id, "⭐ Opening Stars payment...")
-            else:
-                self._answer_callback(cb_id)
         elif data.startswith("pay_crypto:"):
             parts = data.split(":")
             tier_key = parts[1] if len(parts) > 1 else "pro"
@@ -881,16 +874,18 @@ class TelegramBotHandler:
             tier_key = "pro"
         # Determine subscription duration
         if dur == "yr":
-            subscription_duration = SUBSCRIPTION_DURATION_YEAR
+            subscription_duration = SUB_YEARLY
         else:
-            subscription_duration = SUBSCRIPTION_DURATION_MONTH
+            subscription_duration = SUB_MONTHLY
         # Activate subscription
         now = time.time()
         with self._lock:
             sub = self._get_user_sub(chat_id)
             # If already subscribed, extend from current expiry
             if sub["tier"] != "free" and sub.get("expires_at", 0) > now:
-                expires = now + SUBSCRIPTION_DURATION
+                expires = sub["expires_at"] + subscription_duration
+            else:
+                expires = now + subscription_duration
             sub["tier"] = tier_key
             sub["expires_at"] = expires
             sub["subscribed_at"] = now
