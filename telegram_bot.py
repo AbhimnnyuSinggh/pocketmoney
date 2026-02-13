@@ -1,4 +1,3 @@
-
 """
 telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection + Monetization
 Users choose signal type AND category via inline keyboards.
