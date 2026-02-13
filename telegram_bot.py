@@ -175,9 +175,9 @@ TIERS = {
         "daily_limit": 999999,
         "delay_seconds": 0,
         "price_stars": 300,       # monthly
-        "price_usd": 5.99,        # monthly
+        "price_usd": 6.00,        # monthly
         "price_stars_yr": 3000,   # yearly (~17% savings)
-        "price_usd_yr": 59.99,    # yearly
+        "price_usd_yr": 60.00,    # yearly
     },
     "whale_tier": {
         "emoji": "💎",
@@ -185,9 +185,9 @@ TIERS = {
         "daily_limit": 999999,
         "delay_seconds": 0,
         "price_stars": 750,       # monthly
-        "price_usd": 14.99,       # monthly
+        "price_usd": 15.00,       # monthly
         "price_stars_yr": 7500,   # yearly (~17% savings)
-        "price_usd_yr": 149.99,   # yearly
+        "price_usd_yr": 150.00,   # yearly
     },
 }
 
@@ -1158,8 +1158,8 @@ class TelegramBotHandler:
             f"\n"
             f"<b>Plans:</b>\n"
             f"🆓 Free — 5 signals/day, 30-min delay\n"
-            f"⭐ Pro — Unlimited, real-time (500 Stars)\n"
-            f"💎 Whale — Everything + priority (1500 Stars)\n"
+            f"⭐ Pro — Unlimited, real-time (300 Stars)\n"
+            f"💎 Whale — Everything + priority (750 Stars)\n"
             f"\n"
             f"Tap /upgrade to go Pro!"
         )
@@ -1274,12 +1274,12 @@ class TelegramBotHandler:
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"⭐ <b>PRO — $5.99/month</b>\n"
+            f"⭐ <b>PRO — $6/month</b>\n"
             f"  ✓ Unlimited signals\n"
             f"  ✓ Real-time alerts (zero delay)\n"
             f"  ✓ All 6 signal types\n"
             f"\n"
-            f"💎 <b>WHALE — $14.99/month</b>\n"
+            f"💎 <b>WHALE — $15/month</b>\n"
             f"  ✓ Everything in Pro\n"
             f"  ✓ Priority alert delivery\n"
             f"  ✓ Whale trade details\n"
@@ -1803,7 +1803,7 @@ class TelegramBotHandler:
             f"Upgrade to <b>⭐ Pro</b> for:\n"
             f"  ✓ Unlimited signals\n"
             f"  ✓ Real-time delivery (no delay)\n"
-            f"  ✓ Just 500 Stars/month\n"
+            f"  ✓ Just 300 Stars/month\n"
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👇 <b>Tap to upgrade now:</b>"
@@ -1864,7 +1864,7 @@ class TelegramBotHandler:
             f"Pro users captured every one of these.\n"
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🚀 <b>Upgrade for just 500 Stars/month</b>\n"
+            f"🚀 <b>Upgrade for just 300 Stars/month</b>\n"
             f"and never miss another signal."
         )
         self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
