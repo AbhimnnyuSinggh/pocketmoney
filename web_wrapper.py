@@ -17,6 +17,7 @@ bot_status = {
     "opportunities_found": 0,
     "bot_alive": True,
     "last_error": "",
+    "name": "Polymarket Arb Bot",
 }
 class StatusHandler(BaseHTTPRequestHandler):
     """Simple HTTP handler that shows bot status."""
@@ -32,7 +33,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             )
         html = f"""
         <html><body style="font-family:monospace; padding:20px; background:#1a1a2e; color:#e0e0e0;">
-        <h2>🤖 Polymarket Arb Bot v2.0</h2>
+        <h2>🤖 {bot_status['name']}</h2>
         <p>Status: <b style="color:{'#00ff88' if bot_status['bot_alive'] else '#ff6666'};">
             {'RUNNING' if bot_status['bot_alive'] else 'ERROR — RESTARTING'}</b></p>
         <p>Uptime: {hours}h {minutes}m</p>
@@ -69,6 +70,9 @@ def run_bot():
         send_telegram_message,
     )
     cfg = load_config("config.yaml")
+    
+    # Update status name
+    bot_status["name"] = cfg["telegram"].get("bot_name", "PocketMoney")
     # Add defaults
     cfg.setdefault("cross_platform", {"min_profit_pct": 1.0, "similarity_threshold": 0.60})
     cfg.setdefault("bonds", {"min_price": 0.93, "min_roi_pct": 0.5})
