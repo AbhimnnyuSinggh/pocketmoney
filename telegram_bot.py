@@ -150,26 +150,97 @@ TIERS = {
         "emoji": "🆓",
         "label": "Free",
         "daily_limit": 5,
-        "delay_seconds": 1800,  # 30-min delay
+        "delay_seconds": 1800,
         "price_stars": 0,
+        "price_usd": 0,
     },
     "pro": {
         "emoji": "⭐",
         "label": "Pro",
-        "daily_limit": 999999,  # Unlimited
-        "delay_seconds": 0,     # Real-time
-        "price_stars": 500,     # ~$9.99
+        "daily_limit": 999999,
+        "delay_seconds": 0,
+        "price_stars": 300,       # monthly
+        "price_usd": 5.99,        # monthly
+        "price_stars_yr": 3000,   # yearly (~17% savings)
+        "price_usd_yr": 59.99,    # yearly
     },
     "whale_tier": {
         "emoji": "💎",
         "label": "Whale",
-        "daily_limit": 999999,  # Unlimited
-        "delay_seconds": 0,     # Real-time
-        "price_stars": 1500,    # ~$29.99
+        "daily_limit": 999999,
+        "delay_seconds": 0,
+        "price_stars": 750,       # monthly
+        "price_usd": 14.99,       # monthly
+        "price_stars_yr": 7500,   # yearly (~17% savings)
+        "price_usd_yr": 149.99,   # yearly
     },
 }
-# Duration: 30 days in seconds
-SUBSCRIPTION_DURATION = 30 * 24 * 3600
+# Subscription durations
+SUB_MONTHLY = 30 * 24 * 3600     # 30 days
+SUB_YEARLY  = 365 * 24 * 3600    # 365 days
+SUBSCRIPTION_DURATION = SUB_MONTHLY  # default
+# =========================================================================
+# Multi-Chain USDC Wallet Addresses
+# =========================================================================
+# One wallet can work on ALL EVM chains (Polygon, Arbitrum, ETH, BSC, Base)
+# but Solana requires a separate wallet.
+USDC_CHAINS = {
+    "polygon": {
+        "emoji": "🟣",
+        "label": "Polygon (Recommended)",
+        "short": "Polygon",
+        "addr": os.environ.get("USDC_ADDR_POLYGON", ""),
+        "note": "Fastest & cheapest. Same chain as Polymarket.",
+    },
+    "arbitrum": {
+        "emoji": "🔵",
+        "label": "Arbitrum",
+        "short": "Arbitrum",
+        "addr": os.environ.get("USDC_ADDR_ARBITRUM", ""),
+        "note": "Fast & cheap L2.",
+    },
+    "base": {
+        "emoji": "🟦",
+        "label": "Base",
+        "short": "Base",
+        "addr": os.environ.get("USDC_ADDR_BASE", ""),
+        "note": "Coinbase L2, low fees.",
+    },
+    "bsc": {
+        "emoji": "🟡",
+        "label": "BNB Smart Chain",
+        "short": "BSC",
+        "addr": os.environ.get("USDC_ADDR_BSC", ""),
+        "note": "Binance chain, low fees.",
+    },
+    "ethereum": {
+        "emoji": "⚪",
+        "label": "Ethereum (Mainnet)",
+        "short": "ETH",
+        "addr": os.environ.get("USDC_ADDR_ETH", ""),
+        "note": "⚠️ Higher gas fees.",
+    },
+    "solana": {
+        "emoji": "🟪",
+        "label": "Solana",
+        "short": "SOL",
+        "addr": os.environ.get("USDC_ADDR_SOLANA", ""),
+        "note": "Different wallet address.",
+    },
+}
+# =========================================================================
+# Payment Configuration
+# =========================================================================
+PAYMENT_CONFIG = {
+    # --- Stripe Payment Links (Secondary — cards, Apple/Google Pay) ---
+    "stripe_link_pro": os.environ.get("STRIPE_LINK_PRO", ""),
+    "stripe_link_whale": os.environ.get("STRIPE_LINK_WHALE", ""),
+    "stripe_link_pro_yr": os.environ.get("STRIPE_LINK_PRO_YR", ""),
+    "stripe_link_whale_yr": os.environ.get("STRIPE_LINK_WHALE_YR", ""),
+}
+def _usdc_available() -> bool:
+    """Return True if at least one USDC chain has an address configured."""
+    return any(c["addr"] for c in USDC_CHAINS.values())
 # =========================================================================
 # Interactive Bot Handler
 # =========================================================================
@@ -213,6 +284,9 @@ class TelegramBotHandler:
         # Ghost-alert cooldown: don't spam "you missed" every cycle
         self._ghost_last_sent: dict[str, float] = {}
         self._ghost_cooldown = 300  # max one ghost alert every 5 min
+        # Pending external payments awaiting admin approval
+        # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ...}}
+        self._pending_payments: dict[str, dict] = {}
         # Polling internals
         self._last_update_id = 0
         self._lock = threading.Lock()
@@ -434,19 +508,28 @@ class TelegramBotHandler:
             )
         except Exception:
             pass
-    def _send_invoice(self, chat_id: str, tier_key: str) -> bool:
+    def _send_invoice(self, chat_id: str, tier_key: str,
+                      dur: str = "mo") -> bool:
         """Send a Telegram Stars payment invoice."""
         tier = TIERS.get(tier_key)
         if not tier or tier["price_stars"] == 0:
             return False
+        if dur == "yr":
+            stars = tier.get("price_stars_yr", tier["price_stars"])
+            desc_suffix = "12 months"
+            duration_secs = SUB_YEARLY
+        else:
+            stars = tier["price_stars"]
+            desc_suffix = "30 days"
+            duration_secs = SUB_MONTHLY
         payload = {
             "chat_id": chat_id,
-            "title": f"PocketMoney {tier['label']} — 30 Days",
+            "title": f"PocketMoney {tier['label']} — {desc_suffix}",
             "description": self._tier_invoice_desc(tier_key),
-            "payload": f"sub:{tier_key}:{chat_id}:{int(time.time())}",
+            "payload": f"sub:{tier_key}:{dur}:{chat_id}:{int(time.time())}",
             "currency": "XTR",  # Telegram Stars
             "prices": [
-                {"label": f"{tier['label']} Plan (30 days)", "amount": tier["price_stars"]}
+                {"label": f"{tier['label']} Plan ({desc_suffix})", "amount": stars}
             ],
             "provider_token": "",  # Empty for Telegram Stars
         }
@@ -540,21 +623,70 @@ class TelegramBotHandler:
                 ],
             ]
         }
-    @staticmethod
-    def _upgrade_keyboard() -> dict:
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "⭐ Pro — 500 Stars", "callback_data": "buy:pro"},
-                ],
-                [
-                    {"text": "💎 Whale — 1500 Stars", "callback_data": "buy:whale_tier"},
-                ],
-                [
-                    {"text": "📋 Back to Menu", "callback_data": "cmd:menu"},
-                ],
-            ]
-        }
+    def _upgrade_keyboard(self, chat_id: str = "",
+                          tier_key: str = "pro",
+                          yearly: bool = False) -> dict:
+        """Build payment keyboard — USDC primary, Stripe secondary, Stars tertiary."""
+        tier = TIERS.get(tier_key, TIERS["pro"])
+        if yearly:
+            p_usd = tier.get("price_usd_yr", tier["price_usd"])
+            stars = tier.get("price_stars_yr", tier["price_stars"])
+            period = "year"
+            dur_tag = "yr"
+        else:
+            p_usd = tier["price_usd"]
+            stars = tier["price_stars"]
+            period = "month"
+            dur_tag = "mo"
+        buttons: list[list[dict]] = []
+        # Row 1 — USDC (PRIMARY — native to Polymarket)
+        if _usdc_available():
+            buttons.append([
+                {"text": f"🟢 Pay ${p_usd} USDC (Recommended)",
+                 "callback_data": f"pay_crypto:{tier_key}:{dur_tag}"},
+            ])
+        # Row 2 — Stripe (cards, Apple Pay, Google Pay, PayPal)
+        s_suffix = '_yr' if yearly else ''
+        s_key_map = {'pro': f'stripe_link_pro{s_suffix}', 'whale_tier': f'stripe_link_whale{s_suffix}'}
+        stripe_key = s_key_map.get(tier_key, f'stripe_link_pro{s_suffix}')
+        if PAYMENT_CONFIG.get(stripe_key):
+            buttons.append([
+                {"text": f"💳 Card / Apple Pay / G-Pay — ${p_usd}",
+                 "callback_data": f"pay_card:{tier_key}:{dur_tag}"},
+            ])
+        # Row 3 — Telegram Stars (always available, built-in)
+        buttons.append([
+            {"text": f"⭐ Telegram Stars — {stars} Stars",
+             "callback_data": f"buy:{tier_key}:{dur_tag}"},
+        ])
+        # Duration toggle: Monthly ↔ Yearly
+        if yearly:
+            buttons.append([
+                {"text": f"📅 Switch to Monthly (${tier['price_usd']}/{period[0]}o)",
+                 "callback_data": f"dur_mo:{tier_key}"},
+            ])
+        else:
+            yr_price = tier.get('price_usd_yr', tier['price_usd'] * 10)
+            savings = round(tier['price_usd'] * 12 - yr_price, 2)
+            buttons.append([
+                {"text": f"🌟 Yearly — ${yr_price}/yr (save ${savings}!)",
+                 "callback_data": f"dur_yr:{tier_key}"},
+            ])
+        # Switcher: Pro ↔ Whale
+        if tier_key == "pro":
+            buttons.append([
+                {"text": "💎 View Whale Plan",
+                 "callback_data": f"show_tier:whale_tier:{'yr' if yearly else 'mo'}"},
+            ])
+        else:
+            buttons.append([
+                {"text": "⭐ View Pro Plan",
+                 "callback_data": f"show_tier:pro:{'yr' if yearly else 'mo'}"},
+            ])
+        buttons.append([
+            {"text": "📋 Back to Menu", "callback_data": "cmd:menu"},
+        ])
+        return {"inline_keyboard": buttons}
     # -----------------------------------------------------------------
     # Polling loop (runs in background thread)
     # -----------------------------------------------------------------
@@ -636,10 +768,13 @@ class TelegramBotHandler:
                 self._cmd_reset(chat_id)
             elif text == "/upgrade":
                 self._cmd_upgrade(chat_id)
+            elif text.startswith("/approve "):
+                self._cmd_approve(chat_id, text)
     def _on_callback(self, cb: dict):
         cb_id = cb["id"]
         data = cb.get("data", "")
         chat_id = str(cb["message"]["chat"]["id"])
+        # Capture region from callback too — not needed anymore
         if data.startswith("sig:"):
             sig_key = data[4:]
             if sig_key in SIGNAL_TYPES:
@@ -658,9 +793,58 @@ class TelegramBotHandler:
             tier_key = data[4:]
             if tier_key in TIERS and TIERS[tier_key]["price_stars"] > 0:
                 self._send_invoice(chat_id, tier_key)
-                self._answer_callback(cb_id, "💳 Opening payment...")
+                self._answer_callback(cb_id, "⭐ Opening Stars payment...")
             else:
                 self._answer_callback(cb_id)
+        elif data.startswith("pay_crypto:"):
+            parts = data.split(":")
+            tier_key = parts[1] if len(parts) > 1 else "pro"
+            dur = parts[2] if len(parts) > 2 else "mo"
+            self._show_chain_selector(chat_id, tier_key, dur)
+            self._answer_callback(cb_id, "🟢 Choose your chain")
+        elif data.startswith("chain:"):
+            # chain:polygon:pro:mo
+            parts = data.split(":")
+            chain = parts[1] if len(parts) > 1 else "polygon"
+            tier_key = parts[2] if len(parts) > 2 else "pro"
+            dur = parts[3] if len(parts) > 3 else "mo"
+            self._handle_crypto_payment(chat_id, tier_key, chain, dur)
+            self._answer_callback(cb_id, f"🟢 {chain.title()} details sent")
+        elif data.startswith("pay_card:"):
+            parts = data.split(":")
+            tier_key = parts[1] if len(parts) > 1 else "pro"
+            dur = parts[2] if len(parts) > 2 else "mo"
+            self._handle_card_payment(chat_id, tier_key, dur)
+            self._answer_callback(cb_id, "💳 Payment link sent")
+        elif data.startswith("show_tier:"):
+            parts = data.split(":")
+            tier_key = parts[1] if len(parts) > 1 else "pro"
+            dur = parts[2] if len(parts) > 2 else "mo"
+            self._show_tier_details(chat_id, tier_key, dur == "yr")
+            self._answer_callback(cb_id)
+        elif data.startswith("dur_yr:"):
+            tier_key = data[7:]
+            self._show_tier_details(chat_id, tier_key, yearly=True)
+            self._answer_callback(cb_id, "🌟 Yearly plan")
+        elif data.startswith("dur_mo:"):
+            tier_key = data[7:]
+            self._show_tier_details(chat_id, tier_key, yearly=False)
+            self._answer_callback(cb_id, "📅 Monthly plan")
+        elif data.startswith("buy:"):
+            parts = data.split(":")
+            tier_key = parts[1] if len(parts) > 1 else "pro"
+            dur = parts[2] if len(parts) > 2 else "mo"
+            if tier_key in TIERS and TIERS[tier_key]["price_stars"] > 0:
+                self._send_invoice(chat_id, tier_key, dur)
+                self._answer_callback(cb_id, "⭐ Opening Stars payment...")
+            else:
+                self._answer_callback(cb_id)
+        elif data.startswith("paid:"):
+            parts = data.split(":")
+            tier_key = parts[1] if len(parts) > 1 else "pro"
+            dur = parts[2] if len(parts) > 2 else "mo"
+            self._handle_paid_confirmation(chat_id, tier_key, dur)
+            self._answer_callback(cb_id, "✅ Sent for verification")
         elif data == "cmd:menu":
             self._cmd_menu(chat_id)
             self._answer_callback(cb_id)
@@ -692,16 +876,20 @@ class TelegramBotHandler:
         # Parse payload: "sub:pro:chat_id:timestamp"
         parts = payload.split(":")
         tier_key = parts[1] if len(parts) >= 2 and parts[0] == "sub" else "pro"
+        dur = parts[2] if len(parts) >= 3 else "mo" # 'mo' or 'yr'
         if tier_key not in TIERS:
             tier_key = "pro"
+        # Determine subscription duration
+        if dur == "yr":
+            subscription_duration = SUBSCRIPTION_DURATION_YEAR
+        else:
+            subscription_duration = SUBSCRIPTION_DURATION_MONTH
         # Activate subscription
         now = time.time()
         with self._lock:
             sub = self._get_user_sub(chat_id)
             # If already subscribed, extend from current expiry
             if sub["tier"] != "free" and sub.get("expires_at", 0) > now:
-                expires = sub["expires_at"] + SUBSCRIPTION_DURATION
-            else:
                 expires = now + SUBSCRIPTION_DURATION
             sub["tier"] = tier_key
             sub["expires_at"] = expires
@@ -911,7 +1099,7 @@ class TelegramBotHandler:
             self._save_prefs()
         self._cmd_start(chat_id)
     def _cmd_upgrade(self, chat_id: str):
-        """Show upgrade plans with payment buttons."""
+        """Show upgrade plans with payment options."""
         tier = self._get_tier(chat_id)
         if tier != "free":
             tier_info = TIERS.get(tier, TIERS["free"])
@@ -931,7 +1119,7 @@ class TelegramBotHandler:
                 f"Want to extend or upgrade?\n"
                 f"Tap below to add 30 more days:"
             )
-            self._send(chat_id, msg, self._upgrade_keyboard())
+            self._send(chat_id, msg, self._upgrade_keyboard(chat_id, tier))
             return
         msg = (
             f"🚀 <b>UPGRADE YOUR PLAN</b>\n"
@@ -941,24 +1129,273 @@ class TelegramBotHandler:
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"⭐ <b>PRO — 500 Stars/month</b>\n"
+            f"⭐ <b>PRO — $5.99/month</b>\n"
             f"  ✓ Unlimited signals\n"
             f"  ✓ Real-time alerts (zero delay)\n"
             f"  ✓ All 6 signal types\n"
             f"\n"
-            f"💎 <b>WHALE — 1500 Stars/month</b>\n"
+            f"💎 <b>WHALE — $14.99/month</b>\n"
             f"  ✓ Everything in Pro\n"
             f"  ✓ Priority alert delivery\n"
             f"  ✓ Whale trade details\n"
             f"  ✓ Daily summary digest\n"
             f"\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💡 Pay with Telegram Stars — instant,\n"
-            f"no crypto wallet needed!\n"
+            f"🌟 <i>Save ~17% with yearly plans!</i>\n"
             f"\n"
-            f"👇 <b>Tap to subscribe:</b>"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🟢 <i>Pay with USDC — same crypto\n"
+            f"you use on Polymarket!</i>\n"
+            f"\n"
+            f"👇 <b>Choose your payment method:</b>"
         )
-        self._send(chat_id, msg, self._upgrade_keyboard())
+        self._send(chat_id, msg, self._upgrade_keyboard(chat_id, "pro"))
+    def _show_tier_details(self, chat_id: str, tier_key: str,
+                           yearly: bool = False):
+        """Show payment options for a specific tier."""
+        tier = TIERS.get(tier_key, TIERS["pro"])
+        if yearly:
+            price = f"${tier.get('price_usd_yr', tier['price_usd'])}/year"
+        else:
+            price = f"${tier['price_usd']}/month"
+        if tier_key == "whale_tier":
+            features = (
+                f"💎 <b>WHALE PLAN — {price}/month</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"  ✓ Everything in Pro\n"
+                f"  ✓ Priority alert delivery\n"
+                f"  ✓ Whale convergence details\n"
+                f"  ✓ Daily performance summary\n"
+                f"  ✓ 30-day access"
+            )
+        else:
+            features = (
+                f"⭐ <b>PRO PLAN — {price}/month</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"  ✓ Unlimited signals\n"
+                f"  ✓ Real-time (zero delay)\n"
+                f"  ✓ All 6 signal types\n"
+                f"  ✓ 30-day access"
+            )
+        msg = f"{features}\n\n👇 <b>Choose payment method:</b>"
+        self._send(chat_id, msg, self._upgrade_keyboard(chat_id, tier_key, yearly))
+    # -----------------------------------------------------------------
+    # External Payment Handlers
+    # -----------------------------------------------------------------
+    def _show_chain_selector(self, chat_id: str, tier_key: str,
+                             dur: str = "mo"):
+        """Show available USDC chains to the user."""
+        tier = TIERS.get(tier_key, TIERS["pro"])
+        if dur == "yr":
+            price = tier.get("price_usd_yr", tier["price_usd"])
+        else:
+            price = tier["price_usd"]
+        available = [(k, v) for k, v in USDC_CHAINS.items() if v["addr"]]
+        if not available:
+            self._send(chat_id, "❌ No USDC wallets configured yet. Please use Telegram Stars.")
+            return
+        buttons = []
+        for chain_key, chain in available:
+            buttons.append([{
+                "text": f"{chain['emoji']} {chain['label']}",
+                "callback_data": f"chain:{chain_key}:{tier_key}:{dur}",
+            }])
+        buttons.append([{"text": "📋 Back", "callback_data": "cmd:upgrade"}])
+        msg = (
+            f"🟢 <b>SELECT CHAIN FOR USDC</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Amount: <b>${price} USDC</b>\n"
+            f"\n"
+            f"Choose which blockchain to send on:\n"
+            f"\n"
+        )
+        for chain_key, chain in available:
+            msg += f"{chain['emoji']} <b>{chain['short']}</b> — {chain['note']}\n"
+        msg += f"\n👇 <b>Tap your preferred chain:</b>"
+        self._send(chat_id, msg, {"inline_keyboard": buttons})
+    def _handle_crypto_payment(self, chat_id: str, tier_key: str,
+                               chain: str = "polygon", dur: str = "mo"):
+        """Show USDC wallet address for a specific chain."""
+        chain_info = USDC_CHAINS.get(chain)
+        if not chain_info or not chain_info["addr"]:
+            self._send(chat_id, f"❌ {chain.title()} not configured. Pick another chain.")
+            return
+        tier = TIERS.get(tier_key, TIERS["pro"])
+        if dur == "yr":
+            price = tier.get("price_usd_yr", tier["price_usd"])
+            period = "year"
+        else:
+            price = tier["price_usd"]
+            period = "month"
+        addr = chain_info["addr"]
+        network_label = chain_info["short"]
+        ref = f"PM{chat_id[-6:]}{int(time.time()) % 100000}"
+        self._pending_payments[chat_id] = {
+            "tier": tier_key, "method": f"USDC ({network_label})",
+            "ts": time.time(), "ref": ref, "amount": f"${price} USDC",
+            "dur": dur,
+        }
+        confirm_kb = {"inline_keyboard": [
+            [{"text": "✅ I've Paid", "callback_data": f"paid:{tier_key}:{dur}"}],
+            [{"text": "📋 Back", "callback_data": "cmd:upgrade"}],
+        ]}
+        msg = (
+            f"🟢 <b>PAY WITH USDC</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Amount: <b>${price} USDC</b>\n"
+            f"Chain: <b>{chain_info['emoji']} {network_label}</b>\n"
+            f"Duration: <b>1 {period}</b>\n"
+            f"\n"
+            f"Send to this address:\n"
+            f"<code>{addr}</code>\n"
+            f"\n"
+            f"⚠️ Send <b>exactly ${price} USDC</b> on\n"
+            f"<b>{network_label}</b> only!\n"
+            f"Ref: <code>{ref}</code>\n"
+            f"\n"
+            f"After sending, tap <b>'I've Paid'</b> ✅"
+        )
+        self._send(chat_id, msg, confirm_kb)
+    def _handle_card_payment(self, chat_id: str, tier_key: str,
+                             dur: str = "mo"):
+        """Send Stripe payment link — works globally."""
+        ref = f"PM{chat_id[-6:]}{int(time.time()) % 100000}"
+        tier = TIERS.get(tier_key, TIERS["pro"])
+        if dur == "yr":
+            price_usd = tier.get("price_usd_yr", tier["price_usd"])
+            s_suffix = "_yr"
+        else:
+            price_usd = tier["price_usd"]
+            s_suffix = ""
+        link_key = f"stripe_link_{'pro' if tier_key == 'pro' else 'whale'}{s_suffix}"
+        link = PAYMENT_CONFIG.get(link_key, "")
+        if not link:
+            # Fallback: suggest Stars instead
+            self._send(
+                chat_id,
+                f"💳 Card payments coming soon!\n\n"
+                f"For now, use <b>⭐ Telegram Stars</b> — it's instant "
+                f"and works with Apple Pay, Google Pay, or card.\n\n"
+                f"Tap /upgrade to pay with Stars."
+            )
+            return
+        # Append chat_id as reference
+        sep = "&" if "?" in link else "?"
+        full_link = f"{link}{sep}client_reference_id={chat_id}&ref={ref}"
+        price = f"${price_usd}"
+        self._pending_payments[chat_id] = {
+            "tier": tier_key, "method": "Stripe",
+            "ts": time.time(), "ref": ref, "amount": price,
+        }
+        confirm_kb = {"inline_keyboard": [
+            [{"text": f"💳 Pay {price}", "url": full_link}],
+            [{"text": "✅ I've Paid", "callback_data": f"paid:{tier_key}"}],
+            [{"text": "📋 Back", "callback_data": "cmd:upgrade"}],
+        ]}
+        msg = (
+            f"💳 <b>PAY WITH CARD</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Amount: <b>{price}</b>\n"
+            f"Provider: Stripe (secure)\n"
+            f"Ref: <code>{ref}</code>\n"
+            f"\n"
+            f"Accepts: Visa, Mastercard, Apple Pay,\n"
+            f"Google Pay, PayPal, and more.\n"
+            f"\n"
+            f"Tap the button below to pay securely.\n"
+            f"After payment, tap <b>'I've Paid'</b> ✅"
+        )
+        self._send(chat_id, msg, confirm_kb)
+    def _handle_paid_confirmation(self, chat_id: str, tier_key: str,
+                                   dur: str = "mo"):
+        """User clicked 'I've Paid' — notify admin for verification."""
+        pending = self._pending_payments.pop(chat_id, None)
+        method = pending["method"] if pending else "Unknown"
+        ref = pending["ref"] if pending else "N/A"
+        amount = pending["amount"] if pending else "?"
+        dur = pending.get("dur", dur) if pending else dur
+        period = "yearly" if dur == "yr" else "monthly"
+        # Notify the bot owner (admin)
+        admin_id = self.default_chat_id
+        admin_msg = (
+            f"🔔 <b>PAYMENT VERIFICATION NEEDED</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"User: <code>{chat_id}</code>\n"
+            f"Plan: <b>{TIERS.get(tier_key, TIERS['pro'])['label']}</b>\n"
+            f"Duration: <b>{period}</b>\n"
+            f"Method: <b>{method}</b>\n"
+            f"Amount: <b>{amount}</b>\n"
+            f"Ref: <code>{ref}</code>\n"
+            f"\n"
+            f"To activate, send:\n"
+            f"<code>/approve {chat_id} {tier_key} {dur}</code>"
+        )
+        self._send(admin_id, admin_msg)
+        # Confirm to user
+        user_msg = (
+            f"✅ <b>Payment submitted!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Method: {method}\n"
+            f"Ref: <code>{ref}</code>\n"
+            f"\n"
+            f"We're verifying your payment now.\n"
+            f"Your plan will activate within minutes!\n"
+            f"\n"
+            f"⏳ Usually takes less than 5 minutes."
+        )
+        self._send(chat_id, user_msg)
+        logger.info(f"Payment verification requested: {chat_id} → {tier_key} via {method} (ref: {ref})")
+    def _cmd_approve(self, chat_id: str, text: str):
+        """Admin command: /approve <user_id> <tier_key> [mo|yr]"""
+        if chat_id != self.default_chat_id:
+            return  # Only admin can approve
+        parts = text.split()
+        if len(parts) < 3:
+            self._send(chat_id, "Usage: /approve <user_id> <tier_key> [mo|yr]")
+            return
+        user_id = parts[1]
+        tier_key = parts[2]
+        dur = parts[3] if len(parts) > 3 else "mo"
+        if tier_key not in TIERS:
+            self._send(chat_id, f"❌ Unknown tier: {tier_key}. Use: pro, whale_tier")
+            return
+        # Activate subscription
+        now = time.time()
+        duration = SUB_YEARLY if dur == "yr" else SUB_MONTHLY
+        expiry = now + duration
+        sub = self._get_user_sub(user_id)
+        sub["tier"] = tier_key
+        sub["expires_at"] = expiry
+        sub["subscribed_at"] = now
+        self._save_subs()
+        tier_info = TIERS[tier_key]
+        exp_str = datetime.fromtimestamp(
+            expiry, tz=timezone.utc
+        ).strftime("%b %d, %Y")
+        period = "1 year" if dur == "yr" else "30 days"
+        # Notify admin
+        self._send(chat_id, f"✅ Activated {tier_info['label']} ({period}) for user {user_id} until {exp_str}")
+        # Notify user
+        user_msg = (
+            f"🎉 <b>PAYMENT VERIFIED!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Plan: <b>{tier_info['emoji']} {tier_info['label']}</b>\n"
+            f"Duration: <b>{period}</b>\n"
+            f"Expires: <b>{exp_str}</b>\n"
+            f"\n"
+            f"✅ Unlimited real-time signals activated!\n"
+            f"✅ Zero delay on all alerts\n"
+            f"✅ All 6 signal types unlocked\n"
+            f"\n"
+            f"Thank you for supporting PocketMoney! 🚀"
+        )
+        self._send(user_id, user_msg)
+        logger.info(f"Admin approved payment: {user_id} → {tier_key} ({period}) until {exp_str}")
     # -----------------------------------------------------------------
     # Signal type selection + history replay
     # -----------------------------------------------------------------
@@ -1124,7 +1561,7 @@ class TelegramBotHandler:
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👇 <b>Tap to upgrade now:</b>"
         )
-        self._send(chat_id, msg, self._upgrade_keyboard())
+        self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
     def _send_ghost_alert(self, chat_id: str, missed_count: int,
                           missed_profit: float):
         """
@@ -1177,7 +1614,7 @@ class TelegramBotHandler:
             f"🚀 <b>Upgrade for just 500 Stars/month</b>\n"
             f"and never miss another signal."
         )
-        self._send(chat_id, msg, self._upgrade_keyboard())
+        self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
         # Reset weekly counters
         sub["missed_profit_week"] = 0
         sub["missed_count_week"] = 0
@@ -1207,7 +1644,7 @@ class TelegramBotHandler:
             f"⭐ <i>Pro users get unlimited signals like this.\n"
             f"/upgrade to unlock everything.</i>"
         )
-        self._send(chat_id, preview_msg, self._upgrade_keyboard())
+        self._send(chat_id, preview_msg, self._upgrade_keyboard(chat_id))
         sub["last_free_preview"] = time.time()
         self._save_subs()
         logger.info(f"  Sent weekly free preview to {chat_id}")
@@ -1378,5 +1815,3 @@ class TelegramBotHandler:
                     f"💡 <i>/menu to switch signals · /category to filter · /upgrade for Pro</i>",
                     self._menu_button(),
                 )
-
-
