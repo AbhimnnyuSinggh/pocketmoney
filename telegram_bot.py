@@ -5,7 +5,7 @@ Users choose signal type AND category via inline keyboards.
 Only matching signals are delivered. Users can switch anytime.
 
 TIERS:
-  🆓 Free     — 5 signals/day, 30-min delay
+  🆓 Free     — 5 signals/day, 1st instant + rest 5-min delay
   ⭐ Pro      — Unlimited real-time signals ($9.99/mo via Telegram Stars)
   💎 Whale    — Everything + priority alerts ($29.99/mo via Telegram Stars)
 
@@ -165,7 +165,7 @@ TIERS = {
         "emoji": "🆓",
         "label": "Free",
         "daily_limit": 5,
-        "delay_seconds": 1800,
+        "delay_seconds": 300,
         "price_stars": 0,
         "price_usd": 0,
     },
@@ -1574,6 +1574,43 @@ class TelegramBotHandler:
         logger.info(f"Admin approved payment: {user_id} → {tier_key} ({period}) until {exp_str}")
 
     # -----------------------------------------------------------------
+    # Welcome signal — instant proof the bot works
+    # -----------------------------------------------------------------
+
+    def _send_welcome_signal(self, chat_id: str, sig_key: str, cat_key: str):
+        """
+        Send one recent signal immediately when user selects a signal type.
+        This is the HOOK — proves the bot works before they leave.
+        Pulls from in-memory history (if any signals exist).
+        """
+        past = self._get_history_for(sig_key, cat_key)
+        if not past:
+            # No history yet — tell user when to expect signals
+            self._send(
+                chat_id,
+                f"📡 <i>Bot is scanning markets right now.\n"
+                f"Your first {SIGNAL_TYPES.get(sig_key, SIGNAL_TYPES['all'])['emoji']} "
+                f"signal will arrive within ~60 seconds!</i>"
+            )
+            return
+
+        # Send the most recent matching signal as a preview
+        latest = past[-1]
+        msg = latest["msg"] if isinstance(latest, dict) else latest
+        preview = (
+            f"⚡ <b>LATEST SIGNAL — just for you:</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"{msg}\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📡 <i>More signals coming every 60 seconds.\n"
+            f"You'll get up to 5/day free — /upgrade for unlimited.</i>"
+        )
+        self._send(chat_id, preview)
+        logger.info(f"Sent welcome signal to {chat_id} ({sig_key})")
+
+    # -----------------------------------------------------------------
     # Signal type selection + history replay
     # -----------------------------------------------------------------
 
@@ -1611,6 +1648,9 @@ class TelegramBotHandler:
         )
         self._send(chat_id, confirm, self._category_keyboard(current_cat))
 
+        # Welcome signal: send one recent signal immediately to prove bot works
+        self._send_welcome_signal(chat_id, sig_key, current_cat)
+
     def _select_category(self, chat_id: str, cat_key: str):
         """User selected a category. Confirm + replay matching history."""
         if cat_key not in CATEGORIES:
@@ -1647,7 +1687,10 @@ class TelegramBotHandler:
                 f"{'s' if len(past) != 1 else ''}...\n"
             )
         else:
-            confirm += f"📭 No past signals matching this combo yet!\n"
+            confirm += (
+                f"📡 Bot is actively scanning — your first signal\n"
+                f"will arrive within ~60 seconds!\n"
+            )
 
         confirm += (
             f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2057,8 +2100,9 @@ class TelegramBotHandler:
             
             # Bug #3 Fix: Warn free users about delay immediately
             if tier == "free":
-                summary += f"\n🕐 Signals will arrive in 30 minutes"
-                summary += f"\n💡 /upgrade for instant delivery\n"
+                summary += f"\n🟢 Signal #1 arrives instantly!"
+                summary += f"\n🕐 Remaining signals delayed 5 min"
+                summary += f"\n💡 /upgrade for all signals in real-time\n"
 
             type_labels = {
                 "cross_platform_arb": "🔄 Arb",
@@ -2081,27 +2125,40 @@ class TelegramBotHandler:
 
             # Send individual signals (max 10 per user per cycle)
             sent_count = 0
-            for opp in user_opps[:10]:
+            for i, opp in enumerate(user_opps[:10]):
                 msg = format_opportunity(opp)
                 
                 if tier == "free":
-                    # QUEUE for 30 minutes
-                    delay = 1800  # 30 mins
-                    release_time = time.time() + delay
-                    msg += f"\n\n🕐 <i>Delayed 30 min (arriving at {datetime.fromtimestamp(release_time).strftime('%H:%M:%S')})</i>" \
-                           f"\n💡 <i>/upgrade for real-time</i>"
-                    
-                    with self._lock:
-                        self.delayed_queue.append((chat_id, msg, release_time))
-                    # Do NOT increment count here; delayed thread does it
+                    if i == 0:
+                        # FIRST signal: send IMMEDIATELY (the hook)
+                        msg += (
+                            f"\n\n🟢 <i>Signal #1 delivered instantly!</i>"
+                            f"\n💡 <i>/upgrade for all signals in real-time</i>"
+                        )
+                        self._send(chat_id, msg)
+                        self._increment_signal_count(chat_id, 1)
+                        self.signals_sent += 1
+                        sent_count += 1
+                        time.sleep(0.5)
+                    else:
+                        # Remaining signals: 5-min delay (not 30)
+                        delay = 300  # 5 minutes
+                        release_time = time.time() + delay
+                        msg += (
+                            f"\n\n🕐 <i>Delayed 5 min — Pro users got this instantly</i>"
+                            f"\n💡 <i>/upgrade for real-time</i>"
+                        )
+                        with self._lock:
+                            self.delayed_queue.append((chat_id, msg, release_time))
                 else:
-                    # Send IMMEDIATELY
+                    # Paid users: send IMMEDIATELY
                     self._send(chat_id, msg)
                     self.signals_sent += 1
                     sent_count += 1
                     time.sleep(0.5)
 
-            # Track signal count ONLY for paid users (free users tracked when sent)
+            # Track signal count for paid users (free first signal tracked above,
+            # free delayed signals tracked when delivered)
             if tier != "free":
                 self._increment_signal_count(chat_id, sent_count)
 
