@@ -1,3 +1,7 @@
+
+telegram_bot.py
+
+
 """
 telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection + Monetization
 Users choose signal type AND category via inline keyboards.
@@ -285,8 +289,14 @@ class TelegramBotHandler:
         self._ghost_last_sent: dict[str, float] = {}
         self._ghost_cooldown = 300  # max one ghost alert every 5 min
         # Pending external payments awaiting admin approval
-        # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ...}}
+        # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ..., "dur": ...}}
         self._pending_payments: dict[str, dict] = {}
+        # Delayed messages queue for free tier: [(chat_id, message, release_time)]
+        self.delayed_queue: list[tuple[str, str, float]] = []
+        
+        # Start background thread for delayed messages
+        self._delay_thread = threading.Thread(target=self._process_delayed_messages, daemon=True)
+        self._delay_thread.start()
         # Polling internals
         self._last_update_id = 0
         self._lock = threading.Lock()
@@ -1154,7 +1164,7 @@ class TelegramBotHandler:
             price = f"${tier['price_usd']}/month"
         if tier_key == "whale_tier":
             features = (
-                f"💎 <b>WHALE PLAN — {price}/month</b>\n"
+                f"💎 <b>WHALE PLAN — {price}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"  ✓ Everything in Pro\n"
                 f"  ✓ Priority alert delivery\n"
@@ -1164,7 +1174,7 @@ class TelegramBotHandler:
             )
         else:
             features = (
-                f"⭐ <b>PRO PLAN — {price}/month</b>\n"
+                f"⭐ <b>PRO PLAN — {price}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"  ✓ Unlimited signals\n"
                 f"  ✓ Real-time (zero delay)\n"
@@ -1645,8 +1655,34 @@ class TelegramBotHandler:
         logger.info(f"  Sent weekly free preview to {chat_id}")
         return True
     # -----------------------------------------------------------------
-    # Signal Distribution (called from scan cycle)
+    # Signal Distribution
     # -----------------------------------------------------------------
+    def _process_delayed_messages(self):
+        """Background thread to process delayed messages for free users."""
+        while True:
+            time.sleep(10)  # Check every 10 seconds
+            now = time.time()
+            remaining_queue = []
+            
+            # Identify messages ready to send
+            ready_to_send = []
+            with self._lock:
+                for item in self.delayed_queue:
+                    chat_id, msg, release_time = item
+                    if now >= release_time:
+                        ready_to_send.append(item)
+                    else:
+                        remaining_queue.append(item)
+                self.delayed_queue = remaining_queue
+            # Send ready messages
+            for chat_id, msg, _ in ready_to_send:
+                # Re-check limit just in case they spammed recently
+                can_send, _ = self._check_signal_limit(chat_id)
+                if can_send:
+                    self._send(chat_id, msg)
+                    self._increment_signal_count(chat_id, 1)
+                else:
+                    self._send_limit_reached(chat_id)
     def distribute_signals(self, opportunities: list[Opportunity], cfg: dict):
         """
         Send opportunities to all registered users, filtered by
@@ -1731,6 +1767,9 @@ class TelegramBotHandler:
             user_seen = self._user_seen.setdefault(chat_id, {})
             user_opps = []
             for opp in filtered:
+                # STRICT TIER ENFORCEMENT: Whale/Sniper features
+                if opp.opp_type in ["whale_convergence", "new_market"] and tier != "whale_tier":
+                    continue
                 if want_types is not None and opp.opp_type not in want_types:
                     continue
                 # Filter by category
@@ -1746,18 +1785,20 @@ class TelegramBotHandler:
                     continue
                 user_seen[dedup_key] = now
                 user_opps.append(opp)
+            
             if not user_opps:
                 logger.info(
                     f"  User {chat_id} ({sig_key}+{cat_key}): "
                     f"0 new matching — skipping"
                 )
                 continue
-            # Cap signals for free users
+            # Cap signals for free users (preview check)
+            # We don't increment yet for free users because they are queued
             if tier == "free":
                 user_opps = user_opps[:remaining]
             logger.info(
                 f"  User {chat_id} ({sig_key}+{cat_key}, {tier}): "
-                f"sending {len(user_opps)} signals"
+                f"processing {len(user_opps)} signals"
             )
             # Send summary header
             type_counts: dict[str, int] = {}
@@ -1795,16 +1836,28 @@ class TelegramBotHandler:
             sent_count = 0
             for opp in user_opps[:10]:
                 msg = format_opportunity(opp)
+                
                 if tier == "free":
-                    msg += "\n\n🕐 <i>Delayed 30 min · /upgrade for real-time</i>"
-                self._send(chat_id, msg)
-                self.signals_sent += 1
-                sent_count += 1
-                time.sleep(0.5)
-            # Track signal count for free users
-            self._increment_signal_count(chat_id, sent_count)
+                    # QUEUE for 30 minutes
+                    delay = 1800  # 30 mins
+                    release_time = time.time() + delay
+                    msg += f"\n\n🕐 <i>Delayed 30 min (arriving at {datetime.fromtimestamp(release_time).strftime('%H:%M:%S')})</i>" \
+                           f"\n💡 <i>/upgrade for real-time</i>"
+                    
+                    with self._lock:
+                        self.delayed_queue.append((chat_id, msg, release_time))
+                    # Do NOT increment count here; delayed thread does it
+                else:
+                    # Send IMMEDIATELY
+                    self._send(chat_id, msg)
+                    self.signals_sent += 1
+                    sent_count += 1
+                    time.sleep(0.5)
+            # Track signal count ONLY for paid users (free users tracked when sent)
+            if tier != "free":
+                self._increment_signal_count(chat_id, sent_count)
             # Periodic menu reminder
-            if self.signals_sent % 5 == 0:
+            if self.signals_sent > 0 and self.signals_sent % 5 == 0:
                 self._send(
                     chat_id,
                     f"💡 <i>/menu to switch signals · /category to filter · /upgrade for Pro</i>",
