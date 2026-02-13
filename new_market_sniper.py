@@ -189,17 +189,42 @@ def detect_new_markets(
 # =========================================================================
 # Top-Level Entry Point
 # =========================================================================
-def find_new_market_opportunities(cfg: dict) -> list[Opportunity]:
+def find_new_market_opportunities(
+    cfg: dict,
+    existing_markets: list[dict] | None = None,
+) -> list[Opportunity]:
     """
     Main entry point called from the scan cycle.
-    Fetches all current markets, compares to cache, alerts on new ones.
+    Fetches all current markets (or uses existing), compares to cache, alerts on new ones.
     """
     new_markets_cfg = cfg.get("new_markets", {})
     if not new_markets_cfg.get("enabled", True):
         return []
     logger.info("Scanning for newly launched markets...")
     # Fetch current markets
-    current_markets = fetch_all_market_ids(cfg)
+    # Fetch current markets OR use existing
+    if existing_markets:
+        # Normalize existing markets to match sniper format
+        current_markets = []
+        for m in existing_markets:
+            if m.get("platform") == "polymarket":
+                # Create a copy to avoid mutating the original
+                new_m = m.copy()
+                # Ensure compatibility with sniper (it expects 'id' as string)
+                if "market_id" in new_m:
+                    new_m["id"] = str(new_m["market_id"])
+                
+                # Check required fields
+                if "id" in new_m and "yes_price" in new_m:
+                    current_markets.append(new_m)
+        
+        if not current_markets:
+            logger.warning("Existing markets provided but none were valid Polymarket data—refetching?")
+            # Fallback if normalization failed? Or simply assume we have none.
+            # If cross_platform_scanner fetched markets, they should be valid.
+            pass
+    else:
+        current_markets = fetch_all_market_ids(cfg)
     if not current_markets:
         logger.warning("No markets fetched — skipping new market detection")
         return []
