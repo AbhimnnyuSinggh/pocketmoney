@@ -1,8 +1,3 @@
-
-telegram_bot.py
-
-
-
 """
 telegram_bot.py — Interactive Telegram Bot with Signal Type + Category Selection + Monetization
 Users choose signal type AND category via inline keyboards.
@@ -599,7 +594,7 @@ class TelegramBotHandler:
             except http_requests.Timeout:
                 continue
             except Exception as e:
-                logger.error(f"Polling error: {e}")
+                logger.error(f"Polling error: {e}", exc_info=True)
                 time.sleep(5)
     # -----------------------------------------------------------------
     # Update routing
@@ -1383,3 +1378,5 @@ class TelegramBotHandler:
                     f"💡 <i>/menu to switch signals · /category to filter · /upgrade for Pro</i>",
                     self._menu_button(),
                 )
+
+
