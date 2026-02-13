@@ -45,8 +45,8 @@ mispricing:
 telegram:
   enabled: true
   bot_name: "PolyQuick"    # Display name in welcome messages/alerts
-  bot_token: "8306487002:AAHTqwNj6f7BQEtFEAg7GY-ynuAQq3pOTaQ"
-  chat_id: "5792521299"
+  bot_token: ""
+  chat_id: ""
   alert_on_opportunity: true
   alert_on_execution: true
   alert_on_error: true
