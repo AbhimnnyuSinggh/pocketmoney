@@ -88,6 +88,7 @@ def fetch_polymarket_markets(cfg: dict) -> list[dict]:
                     "active": m.get("active", True),
                     "closed": m.get("closed", False),
                     "created_at": m.get("createdAt", ""),
+                    "start_date": m.get("startDate", ""),
                 })
             except (ValueError, IndexError, TypeError):
                 continue
@@ -366,10 +367,10 @@ def find_mispriced_markets(
 # =========================================================================
 # MASTER SCAN — Runs All Strategies
 # =========================================================================
-def run_full_cross_platform_scan(cfg: dict) -> list[Opportunity]:
+def run_full_cross_platform_scan(cfg: dict) -> tuple[list[Opportunity], list[dict]]:
     """
     Run all scanning strategies across all platforms.
-    Returns combined, sorted list of all opportunities.
+    Returns (all_opportunities, poly_markets) tuple.
     """
     all_opportunities = []
     # --- Fetch data from all platforms ---
@@ -403,4 +404,4 @@ def run_full_cross_platform_scan(cfg: dict) -> list[Opportunity]:
         f"TOTAL: {len(all_opportunities)}"
     )
     logger.info(f"{'=' * 50}")
-    return all_opportunities
+    return all_opportunities, poly_markets
