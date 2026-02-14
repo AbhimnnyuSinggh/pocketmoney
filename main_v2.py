@@ -58,11 +58,12 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
     logger.info(f"Scan cycle #{cycle} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"{'='*60}")
     try:
-        opportunities = run_full_cross_platform_scan(cfg)
+        opportunities, poly_markets = run_full_cross_platform_scan(cfg)
     except Exception as e:
         logger.error(f"Scan error: {e}", exc_info=True)
         send_telegram_message(f"❌ Scan error: {str(e)[:200]}", cfg)
         opportunities = []
+        poly_markets = []
     # --- Whale Convergence Scan ---
     try:
         whale_opps = find_whale_opportunities(cfg)
@@ -71,7 +72,7 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
         logger.error(f"Whale tracker error: {e}", exc_info=True)
     # --- New Market Sniper ---
     try:
-        new_market_opps = find_new_market_opportunities(cfg)
+        new_market_opps = find_new_market_opportunities(cfg, existing_markets=poly_markets)
         opportunities.extend(new_market_opps)
     except Exception as e:
         logger.error(f"New market sniper error: {e}", exc_info=True)
