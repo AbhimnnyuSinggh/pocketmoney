@@ -17,6 +17,7 @@ import time
 import json
 import logging
 import requests
+from collections import defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 logger = logging.getLogger("arb_bot.cross_platform")
@@ -178,12 +179,51 @@ class Opportunity:
 # =========================================================================
 # STRATEGY 1: Cross-Platform Arbitrage
 # =========================================================================
+# STRATEGY 1: Cross-Platform Arbitrage (improved matching)
+# =========================================================================
+
+# Common words that don't help distinguish markets
+_STOP_WORDS = frozenset(
+    "will the a an of in on at to by for is be do does "
+    "this that it its if or and not no yes any more than "
+    "before after above below between market price "
+    "what who when where how much many".split()
+)
+
+
+def _extract_keywords(title: str) -> set[str]:
+    """Extract meaningful keywords from a market title."""
+    # Normalize: lowercase, keep only alphanumeric + spaces
+    cleaned = ""
+    for ch in title.lower():
+        if ch.isalnum() or ch == ' ':
+            cleaned += ch
+        else:
+            cleaned += ' '
+
+    words = cleaned.split()
+    # Remove stop words, keep words with 2+ characters
+    keywords = {w for w in words if w not in _STOP_WORDS and len(w) >= 2}
+    return keywords
+
+
+def _keyword_similarity(kw_a: set[str], kw_b: set[str]) -> float:
+    """Jaccard similarity between keyword sets."""
+    if not kw_a or not kw_b:
+        return 0.0
+    intersection = kw_a & kw_b
+    union = kw_a | kw_b
+    return len(intersection) / len(union) if union else 0.0
+
+
 def _title_similarity(title_a: str, title_b: str) -> float:
     """Calculate similarity between two market titles (0 to 1)."""
     # Normalize
     a = title_a.lower().strip()
     b = title_b.lower().strip()
     return SequenceMatcher(None, a, b).ratio()
+
+
 def find_cross_platform_arbs(
     poly_markets: list[dict],
     kalshi_markets: list[dict],
@@ -191,29 +231,81 @@ def find_cross_platform_arbs(
 ) -> list[Opportunity]:
     """
     Find the same event on both platforms with price discrepancies.
-    If Polymarket YES + Kalshi NO < $1.00 (or vice versa), it's arb.
+    Uses keyword-based pre-filtering for speed, then fuzzy matching for accuracy.
     """
     opportunities = []
     min_profit = cfg.get("cross_platform", {}).get("min_profit_pct", 1.0)
-    similarity_threshold = cfg.get("cross_platform", {}).get("similarity_threshold", 0.65)
+    similarity_threshold = cfg.get("cross_platform", {}).get("similarity_threshold", 0.60)
+
     logger.info(f"Matching {len(poly_markets)} Polymarket vs {len(kalshi_markets)} Kalshi markets...")
-    # Build index of Kalshi markets for faster matching
-    for poly in poly_markets:
-        if poly["yes_price"] <= 0:
+
+    # Pre-compute keywords for all markets
+    poly_keywords = []
+    for p in poly_markets:
+        if p["yes_price"] <= 0:
+            poly_keywords.append(set())
+        else:
+            poly_keywords.append(_extract_keywords(p["title"]))
+
+    kalshi_keywords = []
+    for k in kalshi_markets:
+        if k["yes_price"] <= 0:
+            kalshi_keywords.append(set())
+        else:
+            kalshi_keywords.append(_extract_keywords(k["title"]))
+
+    # Build inverted index: keyword → list of kalshi indices
+    # This avoids O(n²) full scan — only compare markets sharing keywords
+    keyword_index: dict[str, list[int]] = defaultdict(list)
+    for i, kws in enumerate(kalshi_keywords):
+        for kw in kws:
+            keyword_index[kw].append(i)
+
+    matched_count = 0
+    near_miss_count = 0
+
+    for pi, poly in enumerate(poly_markets):
+        if not poly_keywords[pi]:
             continue
-        for kalshi in kalshi_markets:
-            if kalshi["yes_price"] <= 0:
+
+        # Find candidate Kalshi markets that share at least 2 keywords
+        candidate_indices: dict[int, int] = defaultdict(int)
+        for kw in poly_keywords[pi]:
+            for ki in keyword_index.get(kw, []):
+                candidate_indices[ki] += 1
+
+        # Only check candidates with 2+ shared keywords
+        for ki, shared_count in candidate_indices.items():
+            if shared_count < 2:
                 continue
-            # Check title similarity
-            sim = _title_similarity(poly["title"], kalshi["title"])
-            if sim < similarity_threshold:
+
+            kalshi = kalshi_markets[ki]
+
+            # Keyword similarity check (fast)
+            kw_sim = _keyword_similarity(poly_keywords[pi], kalshi_keywords[ki])
+            if kw_sim < 0.30:
                 continue
+
+            # Full fuzzy match (slower, only on candidates)
+            full_sim = _title_similarity(poly["title"], kalshi["title"])
+
+            # Use combined score: weight keywords more since they handle
+            # different phrasing better than SequenceMatcher
+            combined_sim = (kw_sim * 0.6) + (full_sim * 0.4)
+
+            if combined_sim < similarity_threshold * 0.75:
+                continue
+
+            matched_count += 1
+
             # Check arb: Poly YES + Kalshi NO
             combo_1_cost = poly["yes_price"] + kalshi["no_price"]
             combo_1_profit = 1.0 - combo_1_cost
+
             # Check arb: Kalshi YES + Poly NO
             combo_2_cost = kalshi["yes_price"] + poly["no_price"]
             combo_2_profit = 1.0 - combo_2_cost
+
             # Take the better combo
             if combo_1_profit > combo_2_profit and combo_1_profit > 0:
                 cost = combo_1_cost
@@ -232,9 +324,14 @@ def find_cross_platform_arbs(
                     {"platform": "Polymarket", "side": "NO", "price": poly["no_price"]},
                 ]
             else:
+                # Matched but no arb opportunity — still worth logging
+                near_miss_count += 1
                 continue
+
             if roi < min_profit:
+                near_miss_count += 1
                 continue
+
             opp = Opportunity(
                 opp_type="cross_platform_arb",
                 title=poly["title"],
@@ -258,8 +355,15 @@ def find_cross_platform_arbs(
             opportunities.append(opp)
             logger.info(
                 f"[CROSS-PLATFORM ARB] {poly['title'][:60]} | "
-                f"ROI: {roi:.2f}% | Similarity: {sim:.2f}"
+                f"ROI: {roi:.2f}% | Match: kw={kw_sim:.2f} full={full_sim:.2f}"
             )
+
+    logger.info(
+        f"Cross-platform matching: {matched_count} title matches found, "
+        f"{near_miss_count} near-misses (matched but no profitable arb), "
+        f"{len(opportunities)} arb opportunities"
+    )
+
     opportunities.sort(key=lambda o: o.profit_pct, reverse=True)
     return opportunities
 # =========================================================================
