@@ -119,10 +119,11 @@ def run_bot():
         bot_status["bot_alive"] = True
         log.info(f"Scan cycle #{cycle}")
         try:
-            opportunities = run_full_cross_platform_scan(cfg)
+            opportunities, poly_markets = run_full_cross_platform_scan(cfg)
         except Exception as e:
             log.error(f"Scan error: {e}", exc_info=True)
             opportunities = []
+            poly_markets = []
             bot_status["last_error"] = f"Scan: {str(e)[:200]}"
         # Whale convergence
         try:
@@ -132,7 +133,7 @@ def run_bot():
             log.error(f"Whale tracker error: {e}", exc_info=True)
         # New market sniper
         try:
-            new_market_opps = find_new_market_opportunities(cfg)
+            new_market_opps = find_new_market_opportunities(cfg, existing_markets=poly_markets)
             opportunities.extend(new_market_opps)
         except Exception as e:
             log.error(f"New market sniper error: {e}", exc_info=True)
