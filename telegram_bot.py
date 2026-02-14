@@ -28,6 +28,8 @@ from collections import defaultdict, deque
 
 import requests as http_requests
 
+from cloud_storage import get_cloud_storage
+
 from cross_platform_scanner import Opportunity
 from telegram_alerts_v2 import format_opportunity
 
@@ -347,35 +349,64 @@ class TelegramBotHandler:
     # -----------------------------------------------------------------
 
     def _load_prefs(self) -> dict:
-        if not os.path.exists(self.prefs_file):
-            return {}
-        try:
-            with open(self.prefs_file, "r") as f:
-                data = json.load(f)
-            raw = data.get("users", data) if isinstance(data, dict) else {}
-            result = {}
+        # Try local file first
+        local_data = {}
+        if os.path.exists(self.prefs_file):
+            try:
+                with open(self.prefs_file, "r") as f:
+                    data = json.load(f)
+                raw = data.get("users", data) if isinstance(data, dict) else {}
+                for k, v in raw.items():
+                    k = str(k)
+                    if isinstance(v, str):
+                        local_data[k] = {"signal": v, "category": "all_cat"}
+                    elif isinstance(v, dict):
+                        local_data[k] = v
+                    else:
+                        local_data[k] = {"signal": "all", "category": "all_cat"}
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        if local_data:
+            return local_data
+
+        # Local file missing (Render restart) — restore from cloud
+        cloud = get_cloud_storage()
+        cloud_data = cloud.load("user_prefs.json")
+        if cloud_data:
+            raw = cloud_data.get("users", cloud_data) if isinstance(cloud_data, dict) else {}
+            restored = {}
             for k, v in raw.items():
                 k = str(k)
                 if isinstance(v, str):
-                    # Backward compat: old format was just a string
-                    result[k] = {"signal": v, "category": "all_cat"}
+                    restored[k] = {"signal": v, "category": "all_cat"}
                 elif isinstance(v, dict):
-                    result[k] = v
+                    restored[k] = v
                 else:
-                    result[k] = {"signal": "all", "category": "all_cat"}
-            return result
-        except (json.JSONDecodeError, IOError):
-            return {}
+                    restored[k] = {"signal": "all", "category": "all_cat"}
+            if restored:
+                logger.info(
+                    f"☁️ Restored {len(restored)} user preference(s) from cloud backup"
+                )
+                try:
+                    with open(self.prefs_file, "w") as f:
+                        json.dump({"users": restored, "updated": time.time()}, f, indent=2)
+                except IOError:
+                    pass
+                return restored
+
+        return {}
 
     def _save_prefs(self):
+        data = {"users": self.user_prefs, "updated": time.time()}
+        # Save locally
         try:
             with open(self.prefs_file, "w") as f:
-                json.dump(
-                    {"users": self.user_prefs, "updated": time.time()},
-                    f, indent=2,
-                )
+                json.dump(data, f, indent=2)
         except IOError as e:
-            logger.error(f"Failed to save prefs: {e}")
+            logger.error(f"Failed to save prefs locally: {e}")
+        # Sync to cloud (batched, non-blocking)
+        get_cloud_storage().save("user_prefs.json", data)
 
     def _get_signal(self, chat_id: str) -> str:
         """Get user's selected signal type key."""
@@ -414,25 +445,50 @@ class TelegramBotHandler:
     # -----------------------------------------------------------------
 
     def _load_subs(self) -> dict:
-        if not os.path.exists(self.subs_file):
-            return {}
-        try:
-            with open(self.subs_file, "r") as f:
-                data = json.load(f)
-            raw = data.get("subs", data) if isinstance(data, dict) else {}
-            return {str(k): v for k, v in raw.items()}
-        except (json.JSONDecodeError, IOError):
-            return {}
+        # Try local file first
+        local_data = {}
+        if os.path.exists(self.subs_file):
+            try:
+                with open(self.subs_file, "r") as f:
+                    data = json.load(f)
+                raw = data.get("subs", data) if isinstance(data, dict) else {}
+                local_data = {str(k): v for k, v in raw.items()}
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        if local_data:
+            return local_data
+
+        # Local file missing/empty (Render restart) — restore from cloud
+        cloud = get_cloud_storage()
+        cloud_data = cloud.load("user_subs.json")
+        if cloud_data:
+            raw = cloud_data.get("subs", cloud_data) if isinstance(cloud_data, dict) else {}
+            restored = {str(k): v for k, v in raw.items()}
+            if restored:
+                logger.info(
+                    f"☁️ Restored {len(restored)} subscription(s) from cloud backup"
+                )
+                # Write to local file so subsequent loads are fast
+                try:
+                    with open(self.subs_file, "w") as f:
+                        json.dump({"subs": restored, "updated": time.time()}, f, indent=2)
+                except IOError:
+                    pass
+                return restored
+
+        return {}
 
     def _save_subs(self):
+        data = {"subs": self.user_subs, "updated": time.time()}
+        # Save locally
         try:
             with open(self.subs_file, "w") as f:
-                json.dump(
-                    {"subs": self.user_subs, "updated": time.time()},
-                    f, indent=2,
-                )
+                json.dump(data, f, indent=2)
         except IOError as e:
-            logger.error(f"Failed to save subs: {e}")
+            logger.error(f"Failed to save subs locally: {e}")
+        # Sync to cloud (batched, non-blocking)
+        get_cloud_storage().save("user_subs.json", data)
 
     def _get_user_sub(self, chat_id: str) -> dict:
         """Get subscription info for a user. Creates default if missing."""
@@ -1004,6 +1060,7 @@ class TelegramBotHandler:
             sub["expires_at"] = expires
             sub["subscribed_at"] = now
             sub["daily_count"] = 0  # Reset limit on upgrade
+            sub["expiry_reminded"] = 0  # Reset renewal reminders
             self.user_subs[chat_id] = sub
             self._save_subs()
 
@@ -1544,6 +1601,7 @@ class TelegramBotHandler:
         sub["tier"] = tier_key
         sub["expires_at"] = expiry
         sub["subscribed_at"] = now
+        sub["expiry_reminded"] = 0  # Reset renewal reminders
         self._save_subs()
 
         tier_info = TIERS[tier_key]
@@ -1810,6 +1868,72 @@ class TelegramBotHandler:
         )
         self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
 
+    # -----------------------------------------------------------------
+    # Subscription expiry reminders
+    # -----------------------------------------------------------------
+
+    def _maybe_send_expiry_reminder(self, chat_id: str):
+        """
+        Send renewal reminders at 3 days and 1 day before expiry.
+        Uses 'expiry_reminded' field to avoid spamming.
+        """
+        sub = self._get_user_sub(chat_id)
+        expires_at = sub.get("expires_at", 0)
+        if expires_at <= 0:
+            return
+
+        now = time.time()
+        days_left = (expires_at - now) / 86400
+
+        # Already reminded at this threshold?
+        # 0=none sent, 3=3-day sent, 1=1-day sent
+        reminded = sub.get("expiry_reminded", 0)
+
+        tier = sub.get("tier", "free")
+        tier_info = TIERS.get(tier, TIERS["free"])
+
+        if days_left <= 1 and reminded != 1:
+            # URGENT: expires tomorrow (fires even if 3-day was already sent)
+            msg = (
+                f"⚠️ <b>Your {tier_info['emoji']} {tier_info['label']} plan "
+                f"expires TOMORROW!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"\n"
+                f"After expiry you'll be back on Free tier:\n"
+                f"  • 5 signals/day limit\n"
+                f"  • 5-min delay on signals #2+\n"
+                f"  • No whale or new market signals\n"
+                f"\n"
+                f"Renew now to keep unlimited real-time access.\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💡 /upgrade to renew"
+            )
+            self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
+            sub["expiry_reminded"] = 1
+            self._save_subs()
+            logger.info(f"Sent 1-day expiry reminder to {chat_id}")
+
+        elif days_left <= 3 and reminded == 0:
+            # WARNING: 3 days left (only if no reminder sent yet)
+            days_int = max(1, int(days_left))
+            msg = (
+                f"📢 <b>Heads up — your {tier_info['emoji']} {tier_info['label']} "
+                f"plan expires in {days_int} days</b>\n"
+                f"\n"
+                f"Don't lose access to unlimited real-time signals.\n"
+                f"Renew early to avoid any gap.\n"
+                f"\n"
+                f"💡 /upgrade to renew"
+            )
+            self._send(chat_id, msg, self._upgrade_keyboard(chat_id))
+            sub["expiry_reminded"] = 3
+            self._save_subs()
+            logger.info(f"Sent 3-day expiry reminder to {chat_id}")
+
+    # -----------------------------------------------------------------
+    # HOOK 1: Ghost alerts
+    # -----------------------------------------------------------------
+
     def _send_ghost_alert(self, chat_id: str, missed_count: int,
                           missed_profit: float):
         """
@@ -2037,6 +2161,10 @@ class TelegramBotHandler:
                 continue
 
             tier_info = TIERS.get(tier, TIERS["free"])
+
+            # Check if paid subscription is about to expire
+            if tier != "free":
+                self._maybe_send_expiry_reminder(chat_id)
 
             # Filter by signal type + category + per-user dedup
             user_seen = self._user_seen.setdefault(chat_id, {})
