@@ -3243,23 +3243,34 @@ class TelegramBotHandler:
 
     def _cmd_top_whales(self, chat_id: str, period: str = "30d"):
         """
-        /topwhales — Show top performing whales from official Polymarket leaderboard.
-        Combines live leaderboard data with vault intelligence scores.
+        /topwhales — Show top performing whales. Non-blocking via thread.
         Usage: /topwhales | /topwhales 7d | /topwhales all
         """
+        import threading
+
         try:
             from whale_vault import WhaleVault
         except ImportError:
             self._send(chat_id, "🐋 Whale Vault not available.")
             return
 
-        self._send(chat_id, f"⏳ Fetching leaderboard ({period})...")
+        self._send(chat_id, f"⏳ Fetching top whales ({period})...")
         vault = getattr(self, "whale_vault", None)
         if vault is None:
-            # Create a fresh vault instance if not attached to bot
             vault_path = self.cfg.get("whale_vault", {}).get("vault_path", "whale_vault.json")
             vault = WhaleVault(vault_path)
 
-        msg = vault.get_leaderboard_display(period)
-        self._send(chat_id, msg, parse_mode="HTML", disable_web_page_preview=True)
+        def _fetch_and_send():
+            try:
+                msg = vault.get_leaderboard_display(period)
+                self._send(chat_id, msg, parse_mode="HTML",
+                           disable_web_page_preview=True)
+            except Exception as e:
+                self._send(chat_id,
+                           f"🐋 <b>Top Whales</b>\nCould not fetch leaderboard: {e}\n"
+                           "Vault builds automatically as the bot scans for whale trades.",
+                           parse_mode="HTML")
+
+        t = threading.Thread(target=_fetch_and_send, daemon=True)
+        t.start()
 

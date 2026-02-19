@@ -296,81 +296,72 @@ class WhaleVault:
     # ------------------------------------------------------------------
     def fetch_leaderboard(self, period: str = "30d", category: str = "all") -> list[dict]:
         """
-        Fetch Polymarket's official public leaderboard.
-
-        Args:
-            period: "all", "1d", "7d", "30d"
-            category: "all", "crypto", "politics", "sports", etc.
-
-        Returns:
-            List of top whale dicts with address, pnl, volume, win_rate, rank.
+        Fetch Polymarket's public leaderboard via data-api.
+        Uses short timeouts (3s) so it never hangs.
+        Falls back to vault-tracked wallets if API is unavailable.
         """
-        endpoints_to_try = [
-            # Official Gamma leaderboard endpoint
-            f"https://gamma-api.polymarket.com/leaderboard",
-            # Data API fallback
-            f"https://data-api.polymarket.com/leaderboard",
-        ]
+        # Map period to API window param
+        window_map = {"1d": "day", "7d": "week", "30d": "month", "all": "all"}
+        window = window_map.get(period, "month")
 
-        params = {
-            "limit": 50,
-            "offset": 0,
-        }
-        if period != "all":
-            params["period"] = period
-        if category != "all":
-            params["category"] = category
+        endpoints_to_try = [
+            f"https://data-api.polymarket.com/leaderboard?window={window}&limit=50",
+            f"https://data-api.polymarket.com/leaderboard?limit=50",
+        ]
 
         for url in endpoints_to_try:
             try:
-                resp = requests.get(url, params=params, timeout=12,
-                                    headers={"Accept": "application/json"})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    # Handle various response shapes
-                    if isinstance(data, list):
-                        entries = data
-                    elif isinstance(data, dict):
-                        entries = (
-                            data.get("leaderboard")
-                            or data.get("data")
-                            or data.get("results")
-                            or []
-                        )
-                    else:
-                        entries = []
+                resp = requests.get(
+                    url, timeout=3,
+                    headers={"Accept": "application/json"}
+                )
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                if isinstance(data, list):
+                    entries = data
+                elif isinstance(data, dict):
+                    entries = (
+                        data.get("leaderboard")
+                        or data.get("data")
+                        or data.get("results")
+                        or []
+                    )
+                else:
+                    continue
 
-                    whales = []
-                    for i, entry in enumerate(entries[:50]):
-                        addr = (
-                            entry.get("address")
-                            or entry.get("proxyWallet")
-                            or entry.get("wallet", "")
-                        )
-                        if not addr:
-                            continue
-                        whales.append({
-                            "address": addr,
-                            "pnl": float(entry.get("pnl", entry.get("profit", 0)) or 0),
-                            "volume": float(entry.get("volume", 0) or 0),
-                            "win_rate": float(entry.get("winRate",
-                                              entry.get("win_rate", 0)) or 0) * 100,
-                            "rank": entry.get("rank", i + 1),
-                            "pseudonym": entry.get("name", entry.get("pseudonym", "")),
-                            "period": period,
-                        })
+                whales = []
+                for i, entry in enumerate(entries[:50]):
+                    addr = (
+                        entry.get("address")
+                        or entry.get("proxyWallet")
+                        or entry.get("wallet", "")
+                    )
+                    if not addr:
+                        continue
+                    pnl_raw = entry.get("pnl", entry.get("profit", 0)) or 0
+                    wr_raw = entry.get("winRate", entry.get("win_rate", 0)) or 0
+                    whales.append({
+                        "address": addr,
+                        "pnl": float(pnl_raw),
+                        "volume": float(entry.get("volume", 0) or 0),
+                        "win_rate": float(wr_raw) * (1 if float(wr_raw) > 1 else 100),
+                        "rank": entry.get("rank", i + 1),
+                        "pseudonym": entry.get("name", entry.get("pseudonym", "")),
+                        "period": period,
+                    })
 
-                    if whales:
-                        logger.info(
-                            f"🏆 Leaderboard fetched: {len(whales)} top whales ({period})"
-                        )
-                        return whales
+                if whales:
+                    logger.info(f"🏆 Leaderboard: {len(whales)} whales ({period})")
+                    return whales
+
             except requests.RequestException as e:
-                logger.debug(f"Leaderboard endpoint {url} failed: {e}")
+                logger.debug(f"Leaderboard endpoint failed: {e}")
                 continue
 
-        logger.warning("Leaderboard fetch failed on all endpoints")
-        return []
+        # API unavailable — build from vault data
+        logger.info("Leaderboard API unavailable, using vault data")
+        return self._leaderboard_from_vault()
 
     def merge_leaderboard_data(self, period: str = "30d"):
         """
@@ -415,6 +406,33 @@ class WhaleVault:
         self.save()
         logger.info(f"🏆 Leaderboard merge: {merged} wallets enriched")
         return merged
+
+    def _leaderboard_from_vault(self) -> list[dict]:
+        """Build a ranked list from vault-tracked wallet data when API is unavailable."""
+        results = []
+        for addr, w in self.wallets.items():
+            vol = w.get("total_volume", 0)
+            trades = w.get("total_trades", 0)
+            if vol < 100 and trades < 2:
+                continue
+            wins = w.get("win_count", 0)
+            losses = w.get("loss_count", 0)
+            total_resolved = wins + losses
+            wr = (wins / total_resolved * 100) if total_resolved >= 3 else 0
+            results.append({
+                "address": addr,
+                "pnl": w.get("pnl_30d", vol * 0.05),  # Estimate if no official PnL
+                "volume": vol,
+                "win_rate": wr,
+                "rank": 0,  # Will be assigned below
+                "pseudonym": w.get("pseudonym", ""),
+                "period": "vault",
+            })
+        # Rank by volume proxy for PnL
+        results.sort(key=lambda x: x["pnl"], reverse=True)
+        for i, r in enumerate(results):
+            r["rank"] = i + 1
+        return results[:50]
 
     def get_leaderboard_display(self, period: str = "30d") -> str:
         """
