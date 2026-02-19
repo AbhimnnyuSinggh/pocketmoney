@@ -1161,6 +1161,12 @@ class TelegramBotHandler:
                 self._cmd_feedback(chat_id)
             elif text == "/portfolio":
                 self._cmd_portfolio(chat_id)
+            elif text in ("/topwhales", "/topwhales 30d"):
+                self._cmd_top_whales(chat_id, "30d")
+            elif text == "/topwhales 7d":
+                self._cmd_top_whales(chat_id, "7d")
+            elif text == "/topwhales all":
+                self._cmd_top_whales(chat_id, "all")
     def _on_callback(self, cb: dict):
         cb_id = cb["id"]
         data = cb.get("data", "")
@@ -3234,3 +3240,26 @@ class TelegramBotHandler:
         rotator = PortfolioRotator(self.cfg)
         result = rotator.analyze(recent_opps)
         self._send(chat_id, result["summary"])
+
+    def _cmd_top_whales(self, chat_id: str, period: str = "30d"):
+        """
+        /topwhales — Show top performing whales from official Polymarket leaderboard.
+        Combines live leaderboard data with vault intelligence scores.
+        Usage: /topwhales | /topwhales 7d | /topwhales all
+        """
+        try:
+            from whale_vault import WhaleVault
+        except ImportError:
+            self._send(chat_id, "🐋 Whale Vault not available.")
+            return
+
+        self._send(chat_id, f"⏳ Fetching leaderboard ({period})...")
+        vault = getattr(self, "whale_vault", None)
+        if vault is None:
+            # Create a fresh vault instance if not attached to bot
+            vault_path = self.cfg.get("whale_vault", {}).get("vault_path", "whale_vault.json")
+            vault = WhaleVault(vault_path)
+
+        msg = vault.get_leaderboard_display(period)
+        self._send(chat_id, msg, parse_mode="HTML", disable_web_page_preview=True)
+

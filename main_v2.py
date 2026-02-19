@@ -298,6 +298,19 @@ def main():
             bot_handler.sentiment_engine = SentimentEngine(cfg)
         except Exception as e:
             logger.warning(f"Sentiment Engine init error: {e}")
+
+    # Strand.trade Whale: Initialize WhaleVault and attach to bot
+    try:
+        from whale_vault import WhaleVault
+        vault_path = cfg.get("whale_vault", {}).get("vault_path", "whale_vault.json")
+        whale_vault = WhaleVault(vault_path)
+        bot_handler.whale_vault = whale_vault
+        # Run initial leaderboard merge on startup
+        whale_vault.merge_leaderboard_data("30d")
+        logger.info("🏆 Whale Vault initialized + leaderboard merged")
+    except Exception as e:
+        whale_vault = None
+        logger.warning(f"WhaleVault init error: {e}")
     # Graceful shutdown
     running = True
     def handle_signal(signum, frame):
@@ -309,6 +322,7 @@ def main():
     # Main loop
     cycle = 0
     interval = cfg["scanner"]["interval_seconds"]
+    last_leaderboard_ts = 0  # Track daily leaderboard refresh
     while running:
         cycle += 1
         start = time.time()
@@ -316,6 +330,14 @@ def main():
             run_cycle(cfg, cycle, bot_handler)
         except Exception as e:
             logger.error(f"Cycle #{cycle} error: {e}", exc_info=True)
+        # Daily leaderboard refresh (every 24h)
+        if whale_vault and time.time() - last_leaderboard_ts > 86400:
+            try:
+                whale_vault.merge_leaderboard_data("30d")
+                last_leaderboard_ts = time.time()
+                logger.info("🏆 Daily leaderboard refresh complete")
+            except Exception as e:
+                logger.warning(f"Leaderboard refresh error: {e}")
         if args.once:
             logger.info("Single-run mode — done")
             break
@@ -323,7 +345,20 @@ def main():
         sleep_time = max(1, interval - elapsed)
         logger.info(f"Next scan in {sleep_time:.0f}s...")
         wake = time.time() + sleep_time
+        # During the sleep window, fast-drain new market alerts every second
+        # This is what achieves sub-10s new market detection between full scans
         while time.time() < wake and running:
+            if speed and bot_handler:
+                try:
+                    fast_opps = speed.get_fast_new_markets()
+                    if fast_opps:
+                        logger.info(
+                            f"🔥 Fast-dispatching {len(fast_opps)} new market alert(s) "
+                            f"between scan cycles!"
+                        )
+                        bot_handler.distribute_signals(fast_opps, cfg)
+                except Exception as e:
+                    logger.debug(f"Fast new-market dispatch error: {e}")
             time.sleep(1)
     bot_handler.stop_polling()
     logger.info("Bot stopped")

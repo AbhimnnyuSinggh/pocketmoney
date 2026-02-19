@@ -16,6 +16,7 @@ import json
 import time
 import logging
 import os
+import requests
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -289,3 +290,193 @@ class WhaleVault:
         if removed:
             logger.info(f"Whale Vault compacted: removed {removed} stale wallets")
             self.save()
+
+    # ------------------------------------------------------------------
+    # Official Leaderboard Integration (Strand.trade parity)
+    # ------------------------------------------------------------------
+    def fetch_leaderboard(self, period: str = "30d", category: str = "all") -> list[dict]:
+        """
+        Fetch Polymarket's official public leaderboard.
+
+        Args:
+            period: "all", "1d", "7d", "30d"
+            category: "all", "crypto", "politics", "sports", etc.
+
+        Returns:
+            List of top whale dicts with address, pnl, volume, win_rate, rank.
+        """
+        endpoints_to_try = [
+            # Official Gamma leaderboard endpoint
+            f"https://gamma-api.polymarket.com/leaderboard",
+            # Data API fallback
+            f"https://data-api.polymarket.com/leaderboard",
+        ]
+
+        params = {
+            "limit": 50,
+            "offset": 0,
+        }
+        if period != "all":
+            params["period"] = period
+        if category != "all":
+            params["category"] = category
+
+        for url in endpoints_to_try:
+            try:
+                resp = requests.get(url, params=params, timeout=12,
+                                    headers={"Accept": "application/json"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Handle various response shapes
+                    if isinstance(data, list):
+                        entries = data
+                    elif isinstance(data, dict):
+                        entries = (
+                            data.get("leaderboard")
+                            or data.get("data")
+                            or data.get("results")
+                            or []
+                        )
+                    else:
+                        entries = []
+
+                    whales = []
+                    for i, entry in enumerate(entries[:50]):
+                        addr = (
+                            entry.get("address")
+                            or entry.get("proxyWallet")
+                            or entry.get("wallet", "")
+                        )
+                        if not addr:
+                            continue
+                        whales.append({
+                            "address": addr,
+                            "pnl": float(entry.get("pnl", entry.get("profit", 0)) or 0),
+                            "volume": float(entry.get("volume", 0) or 0),
+                            "win_rate": float(entry.get("winRate",
+                                              entry.get("win_rate", 0)) or 0) * 100,
+                            "rank": entry.get("rank", i + 1),
+                            "pseudonym": entry.get("name", entry.get("pseudonym", "")),
+                            "period": period,
+                        })
+
+                    if whales:
+                        logger.info(
+                            f"🏆 Leaderboard fetched: {len(whales)} top whales ({period})"
+                        )
+                        return whales
+            except requests.RequestException as e:
+                logger.debug(f"Leaderboard endpoint {url} failed: {e}")
+                continue
+
+        logger.warning("Leaderboard fetch failed on all endpoints")
+        return []
+
+    def merge_leaderboard_data(self, period: str = "30d"):
+        """
+        Fetch official leaderboard and merge PnL/rank data into vault.
+        Called daily from main_v2.py. Enriches existing wallets and
+        adds new top performers we haven't seen trading yet.
+        """
+        leaderboard = self.fetch_leaderboard(period)
+        if not leaderboard:
+            return 0
+
+        merged = 0
+        now = time.time()
+        for entry in leaderboard:
+            addr = entry["address"]
+            # Create wallet entry if not seen yet
+            if addr not in self.wallets:
+                self.wallets[addr] = {
+                    "first_seen": now,
+                    "total_trades": 0,
+                    "total_volume": entry["volume"],
+                    "trade_history": [],
+                    "categories": {},
+                    "pseudonym": entry.get("pseudonym", ""),
+                    "win_count": 0,
+                    "loss_count": 0,
+                    "pending": [],
+                }
+            w = self.wallets[addr]
+            # Enrich with official leaderboard data
+            w[f"pnl_{period}"] = entry["pnl"]
+            w[f"win_rate_{period}"] = entry["win_rate"]
+            w[f"rank_{period}"] = entry["rank"]
+            w["leaderboard_updated"] = now
+            if entry.get("pseudonym") and not w.get("pseudonym"):
+                w["pseudonym"] = entry["pseudonym"]
+            # Boost volume if leaderboard data is larger
+            if entry["volume"] > w.get("total_volume", 0):
+                w["total_volume"] = entry["volume"]
+            merged += 1
+
+        self.save()
+        logger.info(f"🏆 Leaderboard merge: {merged} wallets enriched")
+        return merged
+
+    def get_leaderboard_display(self, period: str = "30d") -> str:
+        """
+        Format top whales for Telegram /topwhales command.
+        Combines live leaderboard data with vault intelligence.
+        """
+        # Find wallets that have leaderboard rank data
+        ranked = []
+        for addr, w in self.wallets.items():
+            rank = w.get(f"rank_{period}")
+            pnl = w.get(f"pnl_{period}", 0)
+            win_rate = w.get(f"win_rate_{period}", 0)
+            if rank is not None:
+                vault_score = self.score_wallet(addr)["score"]
+                ranked.append({
+                    "address": addr,
+                    "rank": rank,
+                    "pnl": pnl,
+                    "win_rate": win_rate,
+                    "pseudonym": w.get("pseudonym", ""),
+                    "vault_score": vault_score,
+                    "total_trades": w.get("total_trades", 0),
+                })
+
+        if not ranked:
+            # No cached data — fetch fresh
+            live = self.fetch_leaderboard(period)
+            if not live:
+                return (
+                    "🏆 <b>TOP WHALES</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "Leaderboard unavailable. Vault builds as bot scans."
+                )
+            ranked = live
+
+        ranked.sort(key=lambda x: x.get("rank", 999))
+        top = ranked[:10]
+
+        msg = (
+            f"🏆 <b>TOP PERFORMING WHALES ({period.upper()})</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+
+        for w in top:
+            addr = w["address"]
+            short = addr[:6] + "..." + addr[-4:] if len(addr) > 10 else addr
+            name = w.get("pseudonym") or short
+            pnl = w.get("pnl", 0)
+            wr = w.get("win_rate", 0)
+            rank = w.get("rank", "?")
+            vs = w.get("vault_score", 0)
+            pnl_sign = "+" if pnl >= 0 else ""
+            tier = "🔥" if vs >= 80 or rank <= 3 else "⭐" if vs >= 60 or rank <= 10 else "📊"
+            msg += (
+                f"{tier} #{rank} <b>{name}</b>\n"
+                f"   💰 {pnl_sign}${pnl:,.0f} PnL"
+                f" | 🎯 {wr:.0f}% win\n"
+                f"   🔗 <a href=\"https://polymarket.com/profile/{addr}\">View on Polymarket</a>\n"
+            )
+
+        msg += (
+            f"\n💡 <i>Data from Polymarket official leaderboard.\n"
+            f"Tap a wallet link to see full trade history.</i>"
+        )
+        return msg

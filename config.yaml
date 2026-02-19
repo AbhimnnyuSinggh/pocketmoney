@@ -96,7 +96,8 @@ dedup:
 # ---------- Phase B: Speed Listener ----------
 speed_listener:
   enabled: true
-  poll_interval: 10           # seconds
+  poll_interval: 10           # trade polling every 10s
+  new_market_poll_interval: 8  # new market check every 8s (sub-10s detection)
   min_trade_value: 500        # USD minimum for fast alerts
 # ---------- Phase B: Sentiment Engine ----------
 sentiment:

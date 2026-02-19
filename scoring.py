@@ -96,14 +96,10 @@ def _time_score(hold_time: str) -> float:
         return 50.0  # Parse error = neutral
 
 
-def _confidence_score(opp) -> float:
+def _confidence_score(opp, whale_vault=None) -> float:
     """
     Score based on opportunity type reliability.
-    cross_platform_arb   → 95 (nearly risk-free if matched correctly)
-    intra_market_arb     → 90 (guaranteed but may have execution risk)
-    high_prob_bond       → 70 (high confidence but not guaranteed)
-    whale_convergence    → 60 (directional signal, less certain)
-    new_market           → 50 (first-mover edge but uncertain)
+    For whale_convergence, boost score based on official leaderboard rank.
     """
     type_scores = {
         "cross_platform_arb": 95.0,
@@ -118,14 +114,41 @@ def _confidence_score(opp) -> float:
         "micro_arb": 85.0,
         "spread_arb": 80.0,
     }
-    return type_scores.get(opp.opp_type, 50.0)
+    base = type_scores.get(opp.opp_type, 50.0)
+
+    # Boost whale_convergence if signal is from a top leaderboard whale
+    if opp.opp_type == "whale_convergence" and whale_vault:
+        try:
+            wallet = ""
+            if opp.legs:
+                wallet = opp.legs[0].get("wallet", "") if isinstance(opp.legs[0], dict) else ""
+            if wallet:
+                ws = whale_vault.score_wallet(wallet)
+                vault_score = ws.get("score", 0)
+                rank_30d = whale_vault.wallets.get(wallet, {}).get("rank_30d")
+                # Leaderboard top 10 = max boost (+30)
+                if rank_30d is not None and rank_30d <= 10:
+                    boost = 30
+                elif rank_30d is not None and rank_30d <= 25:
+                    boost = 20
+                elif vault_score >= 75:
+                    boost = 15
+                elif vault_score >= 60:
+                    boost = 8
+                else:
+                    boost = 0
+                base = min(95.0, base + boost)
+        except Exception:
+            pass
+
+    return base
 
 
 # =========================================================================
 # Main Scoring Function
 # =========================================================================
 
-def compute_edge_score(opp, market_data: dict | None = None, cfg: dict | None = None) -> float:
+def compute_edge_score(opp, market_data: dict | None = None, cfg: dict | None = None, whale_vault=None) -> float:
     """
     Compute unified edge score (0–100) for an Opportunity.
 
@@ -160,7 +183,7 @@ def compute_edge_score(opp, market_data: dict | None = None, cfg: dict | None = 
     l_score = _liquidity_score(liq, vol)
 
     t_score = _time_score(opp.hold_time)
-    c_score = _confidence_score(opp)
+    c_score = _confidence_score(opp, whale_vault)
 
     # Weighted sum
     edge = (
