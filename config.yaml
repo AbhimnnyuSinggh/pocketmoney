@@ -16,7 +16,7 @@ bankroll:
   total_usdc: 1000.0
   max_per_opportunity: 50.0
   max_open_positions: 10
-  min_profit_pct: 0.3        # Global minimum ROI % for any alert
+  min_profit_pct: 0.1        # Lowered: catch more signals across all modules
   fee_buffer_cents: 0.5
 # ---------- Scanner ----------
 scanner:
@@ -40,7 +40,7 @@ bonds:
   min_roi_pct: 0.5           # Min ROI % for bond alerts
 # ---------- Intra-Market Mispricing ----------
 mispricing:
-  max_sum: 0.98              # YES + NO must be below this to trigger
+  max_sum: 0.995             # Raised: was 0.98 — catches more YES+NO mispricing
 # ---------- Telegram Alerts ----------
 telegram:
   enabled: true
@@ -50,14 +50,14 @@ telegram:
   alert_on_opportunity: true
   alert_on_execution: true
   alert_on_error: true
-  min_alert_profit_pct: 0.3
+  min_alert_profit_pct: 0.1  # Lowered: catch more opportunities
 # ---------- Whale Tracking ----------
 whales:
   enabled: true
-  min_trade_size: 1000       # Min USD size to consider "whale"
-  convergence_count: 3       # Number of whales needed for convergence alert
-  convergence_window_min: 60 # Window in minutes to check convergence
-  lookback_minutes: 120      # How far back to fetch trades
+  min_trade_size: 500        # Lowered: Min USD size to consider "whale"
+  convergence_count: 2       # Lowered: 2 whales (was 3) — much more common
+  convergence_window_min: 120 # Widened window to 2 hours
+  lookback_minutes: 240      # Look back 4 hours
 # ---------- New Market Sniper ----------
 new_markets:
   enabled: true
@@ -73,18 +73,18 @@ edge_scoring:
 # ---------- Elite Edge Modules (v3.0) ----------
 anti_hype:
   enabled: true
-  min_delta: 15              # Minimum hype delta % to trigger signal
-  max_price: 0.85            # Don't flag near-certain markets
-  min_volume: 5000           # Require meaningful volume
+  min_delta: 8               # Lowered: was 15 — 8% gap is still meaningful
+  max_price: 0.90            # Raised: catches more hype markets
+  min_volume: 1000           # Lowered: was 5000
 data_arb:
   enabled: true
-  min_delta: 10              # Minimum data edge % to trigger signal
+  min_delta: 5               # Lowered: was 10 — 5% data edge is significant
 longshot:
   enabled: true
-  min_payoff: 3              # Minimum payoff ratio (3x = 33¢ or less)
-  max_price: 0.30            # Maximum price for longshot
-  min_price: 0.03            # Minimum price (avoid dust)
-  min_volume: 500            # Require some activity
+  min_payoff: 2              # Lowered: was 3 — 2x return still worthwhile
+  max_price: 0.40            # Raised: was 0.30
+  min_price: 0.02            # Lowered slightly
+  min_volume: 200            # Lowered: was 500
 bond_compound:
   min_price: 0.95            # Min bond price for compounding calc
   min_liq: 5000              # Min liquidity
@@ -114,22 +114,22 @@ feedback:
 # ---------- Phase B Sprint 5: Micro Arb ----------
 micro_arb:
   enabled: true
-  max_hours: 24
-  min_gap_pct: 3.0
-  max_liquidity: 15000
-  min_volume: 500
+  max_hours: 48              # Raised: was 24h
+  min_gap_pct: 1.5           # Lowered: was 3.0
+  max_liquidity: 50000       # Raised: was 15000
+  min_volume: 100            # Lowered: was 500
 # ---------- Phase B Sprint 5: Spread Arb ----------
 spread_arb:
   enabled: true
-  min_spread_pct: 5.0
-  min_volume: 1000
-  similarity_threshold: 0.70
+  min_spread_pct: 2.0        # Lowered: was 5.0 — 2% gap still profitable
+  min_volume: 500            # Lowered: was 1000
+  similarity_threshold: 0.65 # Loosened: was 0.70
 # ---------- Phase B Sprint 5: Manifold ----------
 manifold:
   enabled: true
   limit: 200
-  similarity_threshold: 0.65
-  min_delta_pct: 8.0
+  similarity_threshold: 0.55 # Loosened: was 0.65
+  min_delta_pct: 4.0         # Lowered: was 8.0
 # ---------- Phase B Sprint 5: Portfolio ----------
 portfolio:
   enabled: true
