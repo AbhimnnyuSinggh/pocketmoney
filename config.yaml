@@ -1,0 +1,139 @@
+# ============================================================
+# Multi-Platform Prediction Market Arb Bot v2.0 — Config
+# ============================================================
+# ---------- Wallet / Auth ----------
+wallet:
+  private_key: ""
+  funder_address: ""
+  signature_type: 1
+# ---------- Execution Mode ----------
+execution:
+  mode: "dry_run"            # "dry_run" or "live"
+  order_type: "limit"
+  post_only: true
+# ---------- Bankroll & Risk ----------
+bankroll:
+  total_usdc: 1000.0
+  max_per_opportunity: 50.0
+  max_open_positions: 10
+  min_profit_pct: 0.3        # Global minimum ROI % for any alert
+  fee_buffer_cents: 0.5
+# ---------- Scanner ----------
+scanner:
+  interval_seconds: 60       # 60 seconds (fetches from multiple platforms now)
+  gamma_api_url: "https://gamma-api.polymarket.com"
+  clob_api_url: "https://clob.polymarket.com"
+  markets_per_page: 100
+  max_markets: 2000
+  prioritize_new: true
+  min_liquidity: 10.0
+  max_liquidity: 10000000.0
+  skip_closed: true
+  orderbook_depth: 5
+# ---------- Cross-Platform Arbitrage Settings ----------
+cross_platform:
+  min_profit_pct: 1.0        # Min ROI % for cross-platform arb alerts
+  similarity_threshold: 0.60 # Title match threshold (0-1, lower = more matches)
+# ---------- High-Probability Bond Settings ----------
+bonds:
+  min_price: 0.93            # Minimum price (93¢+) to consider as bond
+  min_roi_pct: 0.5           # Min ROI % for bond alerts
+# ---------- Intra-Market Mispricing ----------
+mispricing:
+  max_sum: 0.98              # YES + NO must be below this to trigger
+# ---------- Telegram Alerts ----------
+telegram:
+  enabled: true
+  bot_name: "PolyQuick"    # Display name in welcome messages/alerts
+  bot_token: ""
+  chat_id: ""
+  alert_on_opportunity: true
+  alert_on_execution: true
+  alert_on_error: true
+  min_alert_profit_pct: 0.3
+# ---------- Whale Tracking ----------
+whales:
+  enabled: true
+  min_trade_size: 1000       # Min USD size to consider "whale"
+  convergence_count: 3       # Number of whales needed for convergence alert
+  convergence_window_min: 60 # Window in minutes to check convergence
+  lookback_minutes: 120      # How far back to fetch trades
+# ---------- New Market Sniper ----------
+new_markets:
+  enabled: true
+  cache_file: "known_markets.json"
+# ---------- Edge Scoring (v3.0) ----------
+edge_scoring:
+  min_score: 0               # 0 = show all, 70 = strict filter (recommended for auto-execution)
+  weights:
+    profit: 0.40
+    liquidity: 0.30
+    time: 0.15
+    confidence: 0.15
+# ---------- Elite Edge Modules (v3.0) ----------
+anti_hype:
+  enabled: true
+  min_delta: 15              # Minimum hype delta % to trigger signal
+  max_price: 0.85            # Don't flag near-certain markets
+  min_volume: 5000           # Require meaningful volume
+data_arb:
+  enabled: true
+  min_delta: 10              # Minimum data edge % to trigger signal
+longshot:
+  enabled: true
+  min_payoff: 3              # Minimum payoff ratio (3x = 33¢ or less)
+  max_price: 0.30            # Maximum price for longshot
+  min_price: 0.03            # Minimum price (avoid dust)
+  min_volume: 500            # Require some activity
+bond_compound:
+  min_price: 0.95            # Min bond price for compounding calc
+  min_liq: 5000              # Min liquidity
+  reinvest_rate: 0.80        # 80% profit reinvestment
+# ---------- Global Dedup (v3.0) ----------
+dedup:
+  enabled: true
+  cooldown_seconds: 1800     # 30 minutes per user per opportunity hash
+# ---------- Phase B: Speed Listener ----------
+speed_listener:
+  enabled: true
+  poll_interval: 10           # seconds
+  min_trade_value: 500        # USD minimum for fast alerts
+# ---------- Phase B: Sentiment Engine ----------
+sentiment:
+  enabled: true
+  newsapi_key: ""             # Free tier: 100 req/day (optional)
+  refresh_interval: 600       # 10 minutes
+# ---------- Phase B: Resolution Intel ----------
+resolution_intel:
+  enabled: true
+# ---------- Phase B: User Feedback ----------
+feedback:
+  enabled: true
+  file: "feedback.json"
+# ---------- Phase B Sprint 5: Micro Arb ----------
+micro_arb:
+  enabled: true
+  max_hours: 24
+  min_gap_pct: 3.0
+  max_liquidity: 15000
+  min_volume: 500
+# ---------- Phase B Sprint 5: Spread Arb ----------
+spread_arb:
+  enabled: true
+  min_spread_pct: 5.0
+  min_volume: 1000
+  similarity_threshold: 0.70
+# ---------- Phase B Sprint 5: Manifold ----------
+manifold:
+  enabled: true
+  limit: 200
+  similarity_threshold: 0.65
+  min_delta_pct: 8.0
+# ---------- Phase B Sprint 5: Portfolio ----------
+portfolio:
+  enabled: true
+# ---------- Logging ----------
+logging:
+  level: "INFO"
+  file: "arb_bot_v2.log"
+  console: true

@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""
+main_v2.py — Polymarket Multi-Platform Arbitrage Bot v2.0
+Scans MULTIPLE prediction markets for THREE types of opportunities:
+  1. Cross-Platform Arb: Same event priced differently on Polymarket vs Kalshi
+  2. High-Probability Bonds: Near-certain outcomes priced 93-99¢ → pays $1.00
+  3. Intra-Market Arb: YES + NO < $1.00 within a single platform
+Usage:
+  python3 main_v2.py                  # Continuous scanning
+  python3 main_v2.py --once           # Single scan then exit
+  python3 main_v2.py --config my.yaml # Custom config file
+"""
+import sys
+import time
+import signal
+import logging
+import argparse
+from datetime import datetime, timezone
+from config_loader import load_config
+from cross_platform_scanner import run_full_cross_platform_scan, Opportunity
+from whale_tracker import find_whale_opportunities
+from new_market_sniper import find_new_market_opportunities
+from telegram_bot import TelegramBotHandler
+from telegram_alerts_v2 import (
+    send_opportunities_batch,
+    send_startup_message,
+    send_no_opportunities_message,
+    send_telegram_message,
+)
+# Elite Edge modules (v3.0) — graceful import
+try:
+    from elite_edges.anti_hype import find_anti_hype_opportunities
+except ImportError:
+    find_anti_hype_opportunities = None
+try:
+    from elite_edges.data_arb import find_data_arb_opportunities
+except ImportError:
+    find_data_arb_opportunities = None
+try:
+    from elite_edges.longshot_scanner import find_longshot_opportunities
+except ImportError:
+    find_longshot_opportunities = None
+try:
+    from elite_edges.bond_compounder import enrich_bond_opportunities
+except ImportError:
+    enrich_bond_opportunities = None
+# Phase B modules (v3.0 Sprint 4) — graceful import
+try:
+    from elite_edges.resolution_intel import find_resolution_intel_opportunities
+except ImportError:
+    find_resolution_intel_opportunities = None
+try:
+    from speed_listener import SpeedListener
+except ImportError:
+    SpeedListener = None
+try:
+    from sentiment_engine import SentimentEngine
+except ImportError:
+    SentimentEngine = None
+# Phase B Sprint 5 modules — graceful import
+try:
+    from elite_edges.micro_arb import find_micro_arb_opportunities
+except ImportError:
+    find_micro_arb_opportunities = None
+try:
+    from elite_edges.spread_arb import find_spread_arb_opportunities
+except ImportError:
+    find_spread_arb_opportunities = None
+try:
+    from platforms.manifold_adapter import find_manifold_cross_platform_opps
+except ImportError:
+    find_manifold_cross_platform_opps = None
+try:
+    from portfolio_rotator import PortfolioRotator
+except ImportError:
+    PortfolioRotator = None
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+def setup_logging(cfg: dict):
+    level_str = cfg["logging"]["level"].upper()
+    level = getattr(logging, level_str, logging.INFO)
+    handlers = []
+    fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)-8s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    if cfg["logging"]["console"]:
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setFormatter(fmt)
+        handlers.append(ch)
+    log_file = cfg["logging"].get("file")
+    if log_file:
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(fmt)
+        handlers.append(fh)
+    logging.basicConfig(level=level, handlers=handlers)
+logger = logging.getLogger("arb_bot.main")
+# ---------------------------------------------------------------------------
+# Main Loop
+# ---------------------------------------------------------------------------
+def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = None) -> list[Opportunity]:
+    """Execute one full scan cycle across all platforms."""
+    logger.info(f"{'='*60}")
+    logger.info(f"Scan cycle #{cycle} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    logger.info(f"{'='*60}")
+    try:
+        opportunities, poly_markets = run_full_cross_platform_scan(cfg)
+    except Exception as e:
+        logger.error(f"Scan error: {e}", exc_info=True)
+        send_telegram_message(f"❌ Scan error: {str(e)[:200]}", cfg)
+        opportunities = []
+        poly_markets = []
+
+    # Build combined market list for elite modules
+    all_markets = poly_markets  # Kalshi already included in scanner
+
+    # --- Whale Convergence Scan ---
+    try:
+        whale_opps = find_whale_opportunities(cfg)
+        opportunities.extend(whale_opps)
+        # v3.0: Feed whale trades into vault for persistent scoring
+        if bot_handler and hasattr(bot_handler, 'whale_vault') and bot_handler.whale_vault:
+            try:
+                from whale_tracker import fetch_recent_large_trades
+                trades = fetch_recent_large_trades(cfg)
+                if trades:
+                    bot_handler.whale_vault.record_trades_batch(trades)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Whale tracker error: {e}", exc_info=True)
+    # --- New Market Sniper ---
+    try:
+        new_market_opps = find_new_market_opportunities(cfg, existing_markets=poly_markets)
+        opportunities.extend(new_market_opps)
+    except Exception as e:
+        logger.error(f"New market sniper error: {e}", exc_info=True)
+
+    # --- Elite Edge Modules (v3.0) ---
+    # Anti-Hype Detector
+    if find_anti_hype_opportunities and cfg.get("anti_hype", {}).get("enabled", True):
+        try:
+            anti_hype_opps = find_anti_hype_opportunities(all_markets, cfg)
+            opportunities.extend(anti_hype_opps)
+            if anti_hype_opps:
+                logger.info(f"🔻 Anti-Hype: {len(anti_hype_opps)} signals")
+        except Exception as e:
+            logger.error(f"Anti-Hype module error: {e}", exc_info=True)
+
+    # External Data Arb
+    if find_data_arb_opportunities and cfg.get("data_arb", {}).get("enabled", True):
+        try:
+            data_opps = find_data_arb_opportunities(all_markets, cfg)
+            opportunities.extend(data_opps)
+            if data_opps:
+                logger.info(f"📊 Data Arb: {len(data_opps)} signals")
+        except Exception as e:
+            logger.error(f"Data Arb module error: {e}", exc_info=True)
+
+    # Longshot Scanner
+    if find_longshot_opportunities and cfg.get("longshot", {}).get("enabled", True):
+        try:
+            longshot_opps = find_longshot_opportunities(all_markets, cfg)
+            opportunities.extend(longshot_opps)
+            if longshot_opps:
+                logger.info(f"🎯 Longshots: {len(longshot_opps)} signals")
+        except Exception as e:
+            logger.error(f"Longshot module error: {e}", exc_info=True)
+
+    # Bond Compounder — enriches existing bonds (doesn't add new ones)
+    if enrich_bond_opportunities:
+        try:
+            enrich_bond_opportunities(opportunities, cfg)
+        except Exception as e:
+            logger.error(f"Bond Compounder error: {e}", exc_info=True)
+
+    # Resolution Intel (Phase B)
+    if find_resolution_intel_opportunities and cfg.get("resolution_intel", {}).get("enabled", True):
+        try:
+            ri_opps = find_resolution_intel_opportunities(all_markets, cfg)
+            opportunities.extend(ri_opps)
+            if ri_opps:
+                logger.info(f"🔍 Resolution Intel: {len(ri_opps)} signals")
+        except Exception as e:
+            logger.error(f"Resolution Intel error: {e}", exc_info=True)
+
+    # Sentiment enrichment (Phase B) — boost Edge Scores with sentiment
+    if bot_handler and hasattr(bot_handler, 'sentiment_engine') and bot_handler.sentiment_engine:
+        try:
+            bot_handler.sentiment_engine.refresh()
+        except Exception:
+            pass
+
+    # Micro Arb (Phase B Sprint 5)
+    if find_micro_arb_opportunities and cfg.get("micro_arb", {}).get("enabled", True):
+        try:
+            micro_opps = find_micro_arb_opportunities(all_markets, cfg)
+            opportunities.extend(micro_opps)
+            if micro_opps:
+                logger.info(f"⚡ Micro Arb: {len(micro_opps)} signals")
+        except Exception as e:
+            logger.error(f"Micro Arb error: {e}", exc_info=True)
+
+    # Spread Arb (Phase B Sprint 5)
+    if find_spread_arb_opportunities and cfg.get("spread_arb", {}).get("enabled", True):
+        try:
+            spread_opps = find_spread_arb_opportunities(all_markets, cfg)
+            opportunities.extend(spread_opps)
+            if spread_opps:
+                logger.info(f"📐 Spread Arb: {len(spread_opps)} signals")
+        except Exception as e:
+            logger.error(f"Spread Arb error: {e}", exc_info=True)
+
+    # Manifold Cross-Platform (Phase B Sprint 5)
+    if find_manifold_cross_platform_opps and cfg.get("manifold", {}).get("enabled", True):
+        try:
+            manifold_opps = find_manifold_cross_platform_opps(poly_markets, cfg)
+            opportunities.extend(manifold_opps)
+            if manifold_opps:
+                logger.info(f"🌐 Manifold: {len(manifold_opps)} cross-platform arbs")
+        except Exception as e:
+            logger.error(f"Manifold adapter error: {e}", exc_info=True)
+
+    if not opportunities:
+        logger.info("No opportunities this cycle")
+        send_no_opportunities_message(cycle, cfg)
+        return opportunities
+    logger.info(f"🚨 {len(opportunities)} opportunities found!")
+    # Route through interactive handler if available
+    # Per-user dedup is handled inside distribute_signals
+    if bot_handler:
+        bot_handler.distribute_signals(opportunities, cfg)
+    else:
+        send_opportunities_batch(opportunities, cfg)
+    return opportunities
+def main():
+    parser = argparse.ArgumentParser(description="Multi-Platform Prediction Market Arb Bot")
+    parser.add_argument("--config", default="config.yaml", help="Config file path")
+    parser.add_argument("--once", action="store_true", help="Single scan then exit")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
+    # Add default cross-platform settings if not in config
+    cfg.setdefault("cross_platform", {
+        "min_profit_pct": 1.0,
+        "similarity_threshold": 0.60,
+    })
+    cfg.setdefault("bonds", {
+        "min_price": 0.93,
+        "min_roi_pct": 0.5,
+    })
+    cfg.setdefault("mispricing", {
+        "max_sum": 0.98,
+    })
+    cfg.setdefault("whales", {
+        "enabled": True,
+        "min_trade_size": 1000,
+        "convergence_count": 3,
+        "convergence_window_min": 60,
+        "lookback_minutes": 120,
+    })
+    cfg.setdefault("new_markets", {
+        "enabled": True,
+        "cache_file": "known_markets.json",
+    })
+    setup_logging(cfg)
+    logger.info("=" * 60)
+    logger.info("  Multi-Platform Prediction Market Arb Bot v2.0")
+    logger.info(f"  Mode: {cfg['execution']['mode']}")
+    logger.info(f"  Platforms: Polymarket + Kalshi")
+    logger.info(f"  Strategies: Cross-Platform Arb | Bonds | Intra-Market")
+    logger.info(f"  Whale Tracker: {'ON' if cfg.get('whales', {}).get('enabled') else 'OFF'}")
+    logger.info(f"  New Market Sniper: {'ON' if cfg.get('new_markets', {}).get('enabled') else 'OFF'}")
+    logger.info(f"  Bankroll: ${cfg['bankroll']['total_usdc']:.2f}")
+    logger.info(f"  Min ROI: {cfg['bankroll']['min_profit_pct']}%")
+    logger.info(f"  Scan interval: {cfg['scanner']['interval_seconds']}s")
+    logger.info("=" * 60)
+    if cfg["telegram"]["enabled"]:
+        send_startup_message(cfg)
+    # Start interactive bot (polling for /start, /menu, etc.)
+    bot_handler = TelegramBotHandler(cfg)
+    bot_handler.start_polling()
+    logger.info("Interactive signal selector active")
+
+    # Phase B: Start Speed Listener (10s fast polling)
+    speed = None
+    if SpeedListener and cfg.get("speed_listener", {}).get("enabled", True):
+        try:
+            speed = SpeedListener(cfg)
+            speed.start()
+            bot_handler.speed_listener = speed
+        except Exception as e:
+            logger.warning(f"Speed Listener init error: {e}")
+
+    # Phase B: Start Sentiment Engine
+    if SentimentEngine and cfg.get("sentiment", {}).get("enabled", True):
+        try:
+            bot_handler.sentiment_engine = SentimentEngine(cfg)
+        except Exception as e:
+            logger.warning(f"Sentiment Engine init error: {e}")
+    # Graceful shutdown
+    running = True
+    def handle_signal(signum, frame):
+        nonlocal running
+        logger.info("Shutdown signal received...")
+        running = False
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+    # Main loop
+    cycle = 0
+    interval = cfg["scanner"]["interval_seconds"]
+    while running:
+        cycle += 1
+        start = time.time()
+        try:
+            run_cycle(cfg, cycle, bot_handler)
+        except Exception as e:
+            logger.error(f"Cycle #{cycle} error: {e}", exc_info=True)
+        if args.once:
+            logger.info("Single-run mode — done")
+            break
+        elapsed = time.time() - start
+        sleep_time = max(1, interval - elapsed)
+        logger.info(f"Next scan in {sleep_time:.0f}s...")
+        wake = time.time() + sleep_time
+        while time.time() < wake and running:
+            time.sleep(1)
+    bot_handler.stop_polling()
+    logger.info("Bot stopped")
+if __name__ == "__main__":
+    main()
