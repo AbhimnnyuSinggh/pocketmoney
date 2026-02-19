@@ -65,16 +65,6 @@ def find_longshot_opportunities(
     markets: list[dict],
     cfg: dict,
 ) -> list:
-    """
-    Scan for asymmetric longshot opportunities.
-
-    Args:
-        markets: List of market dicts from all platforms
-        cfg: Config dict
-
-    Returns:
-        List of Opportunity objects for longshot bets
-    """
     from cross_platform_scanner import Opportunity
     try:
         from scoring import compute_edge_score
@@ -82,37 +72,43 @@ def find_longshot_opportunities(
         compute_edge_score = None
 
     longshot_cfg = cfg.get("longshot", {})
-    min_payoff = longshot_cfg.get("min_payoff", 3)     # Minimum 3x payoff
-    max_price = longshot_cfg.get("max_price", 0.30)    # Maximum 30¢
-    min_price = longshot_cfg.get("min_price", 0.03)    # Minimum 3¢ (avoid dust)
-    min_volume = longshot_cfg.get("min_volume", 500)
+    min_payoff = longshot_cfg.get("min_payoff", 2)
+    max_price = longshot_cfg.get("max_price", 0.40)
+    min_price = longshot_cfg.get("min_price", 0.02)
+    min_volume = longshot_cfg.get("min_volume", 200)
     enabled = longshot_cfg.get("enabled", True)
 
     if not enabled:
         return []
 
+    # --- Diagnostic counters ---
+    total = len(markets)
+    skip_closed = skip_volume = skip_price = skip_payoff = skip_catalyst = 0
     opportunities = []
 
     for m in markets:
         if m.get("closed") or not m.get("active", True):
+            skip_closed += 1
             continue
 
         volume_24h = m.get("volume_24h", 0)
         if volume_24h < min_volume:
+            skip_volume += 1
             continue
 
-        # Check both sides
-        for side, price in [("YES", m["yes_price"]), ("NO", m["no_price"])]:
+        for side, price in [("YES", m.get("yes_price", 0)), ("NO", m.get("no_price", 0))]:
             if price < min_price or price > max_price:
+                skip_price += 1
                 continue
 
             payoff = _calculate_payoff_ratio(price)
             if payoff < min_payoff:
+                skip_payoff += 1
                 continue
 
-            # Must show catalyst signals (not a dead market)
             has_catalyst, catalyst_reason = _has_catalyst_signals(m)
             if not has_catalyst:
+                skip_catalyst += 1
                 continue
 
             profit = 1.0 - price
@@ -154,15 +150,17 @@ def find_longshot_opportunities(
                 f"{payoff:.0f}x | {side} @ ${price:.2f}"
             )
 
-    # Sort by payoff ratio (highest first)
+    # Sort by payoff ratio (highest first), cap at 5
     opportunities.sort(
         key=lambda o: _calculate_payoff_ratio(o.total_cost), reverse=True
     )
-
-    # Limit to top 5
     opportunities = opportunities[:5]
 
-    if opportunities:
-        logger.info(f"Longshot Scanner: found {len(opportunities)} asymmetric bets")
-
+    # Always log diagnostic summary
+    logger.info(
+        f"[LONGSHOT DIAG] markets={total} | closed={skip_closed} "
+        f"| vol<{min_volume}={skip_volume} | price_range={skip_price} "
+        f"| payoff<{min_payoff}={skip_payoff} | no_catalyst={skip_catalyst} "
+        f"| SIGNALS={len(opportunities)}"
+    )
     return opportunities

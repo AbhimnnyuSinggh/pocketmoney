@@ -108,16 +108,6 @@ def find_anti_hype_opportunities(
     markets: list[dict],
     cfg: dict,
 ) -> list:
-    """
-    Scan markets for anti-hype (bet NO) opportunities.
-
-    Args:
-        markets: List of market dicts from all platforms
-        cfg: Config dict
-
-    Returns:
-        List of Opportunity objects for "bet NO" signals
-    """
     from cross_platform_scanner import Opportunity
     try:
         from scoring import compute_edge_score
@@ -125,28 +115,41 @@ def find_anti_hype_opportunities(
         compute_edge_score = None
 
     anti_hype_cfg = cfg.get("anti_hype", {})
-    min_delta = anti_hype_cfg.get("min_delta", 15)
+    min_delta = anti_hype_cfg.get("min_delta", 8)
     enabled = anti_hype_cfg.get("enabled", True)
 
     if not enabled:
         return []
 
+    # --- Diagnostic counters ---
+    total = len(markets)
+    skip_closed = skip_price_range = skip_volume = skip_delta = 0
     opportunities = []
 
     for m in markets:
         if m.get("closed") or not m.get("active", True):
+            skip_closed += 1
             continue
 
-        if not _is_hype_candidate(m, cfg):
+        yes_price = m.get("yes_price", 0)
+        max_price = anti_hype_cfg.get("max_price", 0.90)
+        min_volume = anti_hype_cfg.get("min_volume", 1000)
+
+        if yes_price < 0.45 or yes_price > max_price:
+            skip_price_range += 1
+            continue
+
+        if m.get("volume_24h", 0) < min_volume:
+            skip_volume += 1
             continue
 
         delta, reason = _estimate_hype_delta(m, cfg)
 
         if delta < min_delta:
+            skip_delta += 1
             continue
 
-        yes_price = m["yes_price"]
-        no_price = m["no_price"]
+        no_price = m.get("no_price", 0)
         no_profit = 1.0 - no_price
         no_roi = (no_profit / no_price) * 100 if no_price > 0 else 0
 
@@ -176,23 +179,21 @@ def find_anti_hype_opportunities(
             category=m.get("category", ""),
         )
 
-        # Score if available
         if compute_edge_score:
             opp.edge_score = compute_edge_score(opp, market_data=m, cfg=cfg)
 
         opportunities.append(opp)
         logger.info(
-            f"[ANTI-HYPE] {m['title'][:50]} | "
-            f"Delta: {delta:.0f}% | NO ROI: {no_roi:.1f}%"
+            f"[ANTI-HYPE] {m['title'][:50]} | Delta: {delta:.0f}% | NO ROI: {no_roi:.1f}%"
         )
 
-    # Sort by delta (most overhyped first)
     opportunities.sort(key=lambda o: o.profit_pct, reverse=True)
-
-    # Limit to top 5 to avoid spam
     opportunities = opportunities[:5]
 
-    if opportunities:
-        logger.info(f"Anti-Hype: found {len(opportunities)} overhyped markets")
-
+    # Always log diagnostic summary
+    logger.info(
+        f"[ANTI-HYPE DIAG] markets={total} | closed={skip_closed} "
+        f"| price_range={skip_price_range} | vol<{min_volume}={skip_volume} "
+        f"| delta<{min_delta}={skip_delta} | SIGNALS={len(opportunities)}"
+    )
     return opportunities

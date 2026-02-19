@@ -114,6 +114,10 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
 
     # Build combined market list for elite modules
     all_markets = poly_markets  # Kalshi already included in scanner
+    logger.info(
+        f"[CYCLE #{cycle} HEALTH] poly_markets={len(poly_markets)} | "
+        f"opp_after_scanner={len(opportunities)}"
+    )
 
     # --- Whale Convergence Scan ---
     try:
