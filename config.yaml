@@ -133,6 +133,27 @@ manifold:
 # ---------- Phase B Sprint 5: Portfolio ----------
 portfolio:
   enabled: true
+# ---------- LP Reward Farming (Admin Only) ----------
+lp_farming:
+  enabled: true
+  lp_mode: "dry_run"           # "dry_run" | "live" — ALWAYS start dry_run
+  max_lp_capital: 300.0        # Max USDC deployed at once
+  max_position_one_side: 150.0 # Max $ value on YES or NO side
+  max_loss_per_session: 20.0   # Auto-kill if unrealized loss exceeds this
+  pre_resolution_exit_hours: 2 # Cancel all orders X hours before resolution
+  rebalance_interval: 30       # Seconds between monitoring ticks
+  midpoint_move_threshold: 0.01 # 1¢ move triggers order adjustment
+  max_spread: 0.04             # Never place outside ±4¢ of midpoint
+  order_size: 50.0             # Default USDC per order
+  state_file: "lp_state.json"  # State persistence file
+  # --- Crash Protection ---
+  crash_threshold: 0.08        # 8¢ drop from fill price → activate trailing sell
+  trail_step: 0.005            # 0.5¢ trailing step (follow price down with sell)
+  emergency_close_pct: 0.15    # 15% drop from fill price → emergency close
+  # --- API Failure ---
+  api_max_retries: 5           # Retries before cancel-all safe mode
+  api_retry_backoff: 10        # Seconds between retries (multiplied by attempt #)
+
 # ---------- Logging ----------
 logging:
   level: "INFO"

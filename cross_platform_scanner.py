@@ -182,6 +182,11 @@ class Opportunity:
     hold_time: str = ""    # Estimated time until resolution
     category: str = ""     # Market category (e.g. "Sports", "Crypto", "Politics")
     edge_score: float = 0.0  # Unified edge score (0-100) from scoring.py
+    # LP / Execution fields (optional — populated by reward_farming & scanner)
+    market_slug: str = ""
+    condition_id: str = ""
+    yes_token_id: str = ""
+    no_token_id: str = ""
 # =========================================================================
 # STRATEGY 1: Cross-Platform Arbitrage
 # =========================================================================

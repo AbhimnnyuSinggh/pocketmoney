@@ -1167,6 +1167,26 @@ class TelegramBotHandler:
                 self._cmd_top_whales(chat_id, "7d")
             elif text == "/topwhales all":
                 self._cmd_top_whales(chat_id, "all")
+            # --- LP Commands (admin only) ---
+            elif text in ("/lp", "/lp status"):
+                self._cmd_lp_status(chat_id)
+            elif text == "/lp start":
+                self._cmd_lp_start(chat_id)
+            elif text == "/lp stop":
+                self._cmd_lp_stop(chat_id)
+            elif text == "/lp markets":
+                self._cmd_lp_markets(chat_id)
+            # --- Manual Trading Commands (admin only) ---
+            elif text.startswith("/buy "):
+                self._cmd_manual_buy(chat_id, text)
+            elif text.startswith("/sell "):
+                self._cmd_manual_sell(chat_id, text)
+            elif text == "/orders":
+                self._cmd_show_orders(chat_id)
+            elif text.startswith("/cancel"):
+                self._cmd_cancel_order(chat_id, text)
+            elif text == "/positions":
+                self._cmd_positions(chat_id)
     def _on_callback(self, cb: dict):
         cb_id = cb["id"]
         data = cb.get("data", "")
@@ -1265,6 +1285,22 @@ class TelegramBotHandler:
             self._handle_vote(chat_id, vote, sig_hash)
             emoji = "👍" if vote == "up" else "👎"
             self._answer_callback(cb_id, f"{emoji} Vote recorded!")
+        elif data.startswith("lp_start:"):
+            # LP farming start from signal inline button
+            market_slug = data[9:]
+            self._answer_callback(cb_id, "🏭 Starting LP...")
+            self._cmd_lp_start_market(chat_id, market_slug)
+        elif data.startswith("trade_buy:"):
+            # Quick buy from signal
+            parts = data.split(":", 3)  # trade_buy:slug:side:price
+            self._answer_callback(cb_id, "💰 Processing...")
+            if len(parts) >= 4:
+                self._cmd_quick_trade(chat_id, "BUY", parts[1], parts[2], parts[3])
+        elif data.startswith("trade_sell:"):
+            parts = data.split(":", 3)
+            self._answer_callback(cb_id, "💰 Processing...")
+            if len(parts) >= 4:
+                self._cmd_quick_trade(chat_id, "SELL", parts[1], parts[2], parts[3])
         else:
             self._answer_callback(cb_id)
     # -----------------------------------------------------------------
@@ -3274,3 +3310,378 @@ class TelegramBotHandler:
         t = threading.Thread(target=_fetch_and_send, daemon=True)
         t.start()
 
+    # ------------------------------------------------------------------
+    # LP Farming Commands (Admin Only)
+    # ------------------------------------------------------------------
+    def _cmd_lp_status(self, chat_id: str):
+        """Show LP farming status — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available. Check dependencies.")
+            return
+        self._send(chat_id, engine.get_status(), parse_mode="HTML")
+
+    def _cmd_lp_start(self, chat_id: str):
+        """Start LP farming on best available market — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available.")
+            return
+        if engine.is_running:
+            self._send(chat_id, "🏭 LP is already running. Use /lp stop first.")
+            return
+
+        # Find best market
+        self._send(chat_id, "⏳ Scanning for best LP market...")
+        try:
+            from elite_edges.reward_farming import pick_best_lp_market
+            market = pick_best_lp_market(self.cfg)
+        except ImportError:
+            self._send(chat_id, "❌ reward_farming module not available")
+            return
+
+        if market is None:
+            self._send(chat_id,
+                       "🏭 No suitable markets right now.\n"
+                       "Need: resolves <24h, vol >$10K, balanced price.")
+            return
+
+        # Start engine on that market
+        engine.start(market)
+
+    def _cmd_lp_stop(self, chat_id: str):
+        """Kill switch — cancel all LP orders and stop — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available.")
+            return
+        if not engine.is_running:
+            self._send(chat_id, "🏭 LP is not running.")
+            return
+        engine.stop()
+
+    def _cmd_lp_markets(self, chat_id: str):
+        """Show top 5 LP-able markets — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        self._send(chat_id, "⏳ Scanning LP markets...")
+        import threading
+        def _fetch():
+            try:
+                from elite_edges.reward_farming import find_lp_markets_display
+                msg = find_lp_markets_display(self.cfg)
+                self._send(chat_id, msg, parse_mode="HTML")
+            except ImportError:
+                self._send(chat_id, "❌ reward_farming module not available")
+            except Exception as e:
+                self._send(chat_id, f"❌ Error: {e}")
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _get_lp_engine(self):
+        """Lazy-init LP Engine. Returns cached instance or None."""
+        if hasattr(self, "_lp_engine") and self._lp_engine is not None:
+            return self._lp_engine
+
+        try:
+            from lp_order_manager import LPOrderManager
+            from lp_engine import LPEngine
+        except ImportError:
+            return None
+
+        lp_cfg = self.cfg.get("lp_farming", {})
+        if not lp_cfg.get("enabled", False):
+            return None
+
+        # Initialize CLOB client if in live mode and keys available
+        clob_client = None
+        if lp_cfg.get("lp_mode") == "live":
+            import os
+            pk = os.environ.get("POLY_PRIVATE_KEY", "")
+            funder = os.environ.get("POLY_FUNDER_ADDRESS", "")
+            if pk and funder:
+                try:
+                    from py_clob_client.client import ClobClient
+                    clob_client = ClobClient(
+                        host="https://clob.polymarket.com",
+                        key=pk,
+                        chain_id=137,
+                        funder=funder,
+                        signature_type=1,
+                    )
+                    logger.info("CLOB client initialized for live LP")
+                except Exception as e:
+                    logger.error(f"CLOB client init error: {e}")
+
+        om = LPOrderManager(self.cfg, clob_client=clob_client)
+
+        # Create notify function that sends to admin
+        admin_id = self.default_chat_id
+        def _notify(msg):
+            self._send(admin_id, msg, parse_mode="HTML")
+
+        # Run startup recovery (cancel dangling orders from crash, notify admin)
+        om.startup_recovery(notify_fn=_notify)
+
+        self._lp_engine = LPEngine(self.cfg, om, notify_fn=_notify)
+        logger.info("LP Engine initialized")
+        return self._lp_engine
+
+    # ------------------------------------------------------------------
+    # Manual Trading Commands (Admin Only)
+    # ------------------------------------------------------------------
+    def _cmd_manual_buy(self, chat_id: str, text: str):
+        """
+        /buy YES <slug> <price> <amount>
+        /buy NO <slug> <price> <amount>
+        Example: /buy YES will-btc-hit-100k 0.55 50
+        """
+        if not self._is_admin(chat_id):
+            return
+        parts = text.split()
+        if len(parts) < 5:
+            self._send(chat_id,
+                       "💰 <b>Usage:</b> /buy YES|NO &lt;market-slug&gt; &lt;price&gt; &lt;amount_usd&gt;\n"
+                       "Example: <code>/buy YES will-btc-hit-100k 0.55 50</code>",
+                       parse_mode="HTML")
+            return
+        self._execute_manual_trade(chat_id, "BUY", parts[1], parts[2], parts[3], parts[4])
+
+    def _cmd_manual_sell(self, chat_id: str, text: str):
+        """
+        /sell YES <slug> <price> <amount>
+        /sell NO <slug> <price> <amount>
+        Example: /sell YES will-btc-hit-100k 0.60 50
+        """
+        if not self._is_admin(chat_id):
+            return
+        parts = text.split()
+        if len(parts) < 5:
+            self._send(chat_id,
+                       "💰 <b>Usage:</b> /sell YES|NO &lt;market-slug&gt; &lt;price&gt; &lt;amount_usd&gt;\n"
+                       "Example: <code>/sell YES will-btc-hit-100k 0.60 50</code>",
+                       parse_mode="HTML")
+            return
+        self._execute_manual_trade(chat_id, "SELL", parts[1], parts[2], parts[3], parts[4])
+
+    def _execute_manual_trade(self, chat_id: str, action: str,
+                              side: str, slug: str, price_str: str, amount_str: str):
+        """Execute a manual buy/sell order via CLOB client."""
+        side = side.upper()
+        if side not in ("YES", "NO"):
+            self._send(chat_id, "❌ Side must be YES or NO")
+            return
+
+        try:
+            price = float(price_str)
+            amount = float(amount_str)
+        except ValueError:
+            self._send(chat_id, "❌ Price and amount must be numbers")
+            return
+
+        if price <= 0 or price >= 1:
+            self._send(chat_id, "❌ Price must be between 0 and 1")
+            return
+        if amount <= 0 or amount > 500:
+            self._send(chat_id, "❌ Amount must be $1-$500")
+            return
+
+        size = amount / price
+        lp_cfg = self.cfg.get("lp_farming", {})
+        mode = lp_cfg.get("lp_mode", "dry_run")
+
+        # Look up token ID for the market
+        token_id = self._resolve_token_id(slug, side)
+
+        if mode == "dry_run":
+            self._send(chat_id,
+                       f"🟡 <b>DRY RUN — {action} Order</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"Market: {slug}\n"
+                       f"Side: {side} | {action}\n"
+                       f"Price: ${price:.4f}\n"
+                       f"Amount: ${amount:.2f} ({size:.1f} shares)\n"
+                       f"Token: {token_id[:20] if token_id else 'unknown'}...\n"
+                       f"\n⚠️ Set <code>lp_mode: live</code> to place real orders",
+                       parse_mode="HTML")
+            return
+
+        # Live mode
+        if not token_id:
+            self._send(chat_id, f"❌ Could not resolve token ID for {slug} {side}")
+            return
+
+        engine = self._get_lp_engine()
+        if engine is None or engine.om.client is None:
+            self._send(chat_id, "❌ CLOB client not available. Check POLY_PRIVATE_KEY env var.")
+            return
+
+        order_side = "BUY" if action == "BUY" else "SELL"
+        order_id = engine.om.place_order(
+            token_id=token_id,
+            side=order_side,
+            price=price,
+            size=round(size, 2),
+        )
+
+        if order_id:
+            self._send(chat_id,
+                       f"✅ <b>Order Placed!</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"ID: <code>{order_id}</code>\n"
+                       f"{action} {size:.1f} {side} shares @ ${price:.4f}\n"
+                       f"Market: {slug}\n"
+                       f"Total: ${amount:.2f}",
+                       parse_mode="HTML")
+        else:
+            self._send(chat_id, f"❌ Order rejected by risk guards. Check /lp status for limits.")
+
+    def _cmd_show_orders(self, chat_id: str):
+        """Show all open orders — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "💰 Engine not available")
+            return
+
+        open_orders = engine.om.get_open_orders()
+        if not open_orders:
+            self._send(chat_id, "💰 <b>Open Orders</b>\nNo open orders.", parse_mode="HTML")
+            return
+
+        msg = "💰 <b>Open Orders</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        for i, o in enumerate(open_orders, 1):
+            msg += (
+                f"\n{i}. {o['side']} {o['size']:.1f} @ ${o['price']:.4f}\n"
+                f"   ID: <code>{o['order_id'][:20]}</code>\n"
+            )
+        self._send(chat_id, msg, parse_mode="HTML")
+
+    def _cmd_cancel_order(self, chat_id: str, text: str):
+        """/cancel all  OR  /cancel <order_id>"""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "💰 Engine not available")
+            return
+
+        parts = text.split()
+        if len(parts) >= 2 and parts[1] == "all":
+            count = engine.om.cancel_all_orders()
+            self._send(chat_id, f"🛑 Cancelled {count} orders")
+        elif len(parts) >= 2:
+            order_id = parts[1]
+            ok = engine.om.cancel_order(order_id)
+            self._send(chat_id,
+                       f"✅ Cancelled {order_id[:20]}" if ok
+                       else f"❌ Failed to cancel {order_id[:20]}")
+        else:
+            self._send(chat_id,
+                       "💰 <b>Usage:</b>\n"
+                       "<code>/cancel all</code> — cancel all orders\n"
+                       "<code>/cancel &lt;order_id&gt;</code> — cancel specific order",
+                       parse_mode="HTML")
+
+    def _cmd_positions(self, chat_id: str):
+        """Show current positions — admin only."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "💰 Engine not available")
+            return
+
+        pos = engine.om.get_position()
+        mode_label = "🔴 LIVE" if engine.om.mode == "live" else "🟡 DRY RUN"
+        self._send(chat_id,
+                   f"📊 <b>Positions</b> ({mode_label})\n"
+                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                   f"YES shares: {pos.yes_shares:.1f}\n"
+                   f"NO shares: {pos.no_shares:.1f}\n"
+                   f"Total cost: ${pos.total_cost:.2f}\n"
+                   f"Total fills: {pos.total_fills}",
+                   parse_mode="HTML")
+
+    def _cmd_quick_trade(self, chat_id: str, action: str,
+                         slug: str, side: str, price_str: str):
+        """Quick trade from inline button — uses default order size."""
+        if not self._is_admin(chat_id):
+            return
+        order_size = self.cfg.get("lp_farming", {}).get("order_size", 50.0)
+        self._execute_manual_trade(
+            chat_id, action, side, slug, price_str, str(order_size)
+        )
+
+    def _cmd_lp_start_market(self, chat_id: str, market_slug: str):
+        """
+        Start LP farming on a specific market (from inline button).
+        Called from lp_start:<slug> callback.
+        """
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available.")
+            return
+        if engine.is_running:
+            self._send(chat_id, "🏭 LP already running. /lp stop first.")
+            return
+
+        # Look up market details by slug
+        self._send(chat_id, f"⏳ Starting LP on {market_slug}...")
+        import threading
+        def _start():
+            try:
+                from elite_edges.reward_farming import _fetch_lp_candidates
+                markets = _fetch_lp_candidates(self.cfg)
+                target = None
+                for m in markets:
+                    if m.get("slug", "") == market_slug:
+                        target = m
+                        break
+                if target is None:
+                    self._send(chat_id, f"❌ Market {market_slug} not found")
+                    return
+                engine.start(target)
+            except Exception as e:
+                self._send(chat_id, f"❌ LP start error: {e}")
+        threading.Thread(target=_start, daemon=True).start()
+
+    def _resolve_token_id(self, slug: str, side: str) -> str:
+        """
+        Resolve CLOB token ID for a market slug + side.
+        Fetches from Gamma API if needed.
+        """
+        try:
+            import requests, json
+            base = self.cfg.get("scanner", {}).get(
+                "gamma_api_url", "https://gamma-api.polymarket.com"
+            )
+            resp = requests.get(
+                f"{base}/markets",
+                params={"slug": slug, "limit": 1},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                return ""
+            markets = resp.json()
+            if not markets:
+                return ""
+            m = markets[0]
+            clob_tokens = m.get("clobTokenIds", "[]")
+            if isinstance(clob_tokens, str):
+                clob_tokens = json.loads(clob_tokens)
+            if side.upper() == "YES":
+                return clob_tokens[0] if clob_tokens else ""
+            else:
+                return clob_tokens[1] if len(clob_tokens) > 1 else ""
+        except Exception as e:
+            logger.debug(f"Token ID resolution failed: {e}")
+            return ""

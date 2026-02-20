@@ -1,3 +1,5 @@
 # Multi-Platform Prediction Market Arb Bot v2.0
 requests>=2.31.0
 pyyaml>=6.0
+py-clob-client>=0.34.0
+cryptography>=41.0.0
