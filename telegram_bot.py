@@ -1080,6 +1080,12 @@ class TelegramBotHandler:
                         self._handle_update(upd)
                     except Exception as e:
                         logger.error(f"Update handler error: {e}")
+                        import traceback
+                        tb = traceback.format_exc()
+                        if "message" in upd:
+                            cid = str(upd["message"].get("chat", {}).get("id", ""))
+                            if self._is_admin(cid):
+                                self._send(cid, f"❌ <b>Crash in handler:</b>\n<pre>{tb[-1000:]}</pre>", parse_mode="HTML")
             except http_requests.Timeout:
                 continue
             except Exception as e:
