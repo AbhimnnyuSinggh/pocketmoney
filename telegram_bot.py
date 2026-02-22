@@ -1187,6 +1187,11 @@ class TelegramBotHandler:
                 self._cmd_cancel_order(chat_id, text)
             elif text == "/positions":
                 self._cmd_positions(chat_id)
+            # --- Bond Spreader Commands ---
+            elif text.startswith("/bonds"):
+                self._cmd_bonds(chat_id, text)
+            elif text.startswith("/wallet"):
+                self._cmd_wallet(chat_id, text)
     def _on_callback(self, cb: dict):
         cb_id = cb["id"]
         data = cb.get("data", "")
@@ -1515,6 +1520,8 @@ class TelegramBotHandler:
             f"/whales   — Whale vault\n"
             f"/status   — View current stats\n"
             f"/results  — Bond performance tracker\n"
+            f"/bonds    — Bond spread automator\n"
+            f"/wallet   — Wallet & trading setup\n"
             f"/upgrade  — View plans & subscribe\n"
             f"/reset    — Reset preferences\n"
             f"/help     — This message\n"
@@ -3685,3 +3692,330 @@ class TelegramBotHandler:
         except Exception as e:
             logger.debug(f"Token ID resolution failed: {e}")
             return ""
+
+    # ------------------------------------------------------------------
+    # Bond Spread Automator Commands
+    # ------------------------------------------------------------------
+    def _cmd_bonds(self, chat_id: str, text: str):
+        """Bond Spread Automator commands."""
+        tier = self._get_tier(chat_id)
+        parts = text.strip().split()
+        subcmd = parts[1].lower() if len(parts) > 1 else ""
+
+        bs = getattr(self, '_bond_spreader', None)
+
+        # /bonds — status
+        if not subcmd or subcmd == "status":
+            if tier == "free":
+                self._send(chat_id, (
+                    "🏦 <b>Bond Spread Automator</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "Auto-spread small bets across 50-100\n"
+                    "high-probability bonds for consistent returns.\n\n"
+                    "🔒 Requires Pro plan to view, Whale to control.\n"
+                    "💡 /upgrade to unlock"
+                ), parse_mode="HTML")
+                return
+            if not bs:
+                self._send(chat_id, (
+                    "🏦 <b>Bond Spreader</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "Module not initialized yet.\n"
+                    "Enable in config: <code>bond_spreader.enabled: true</code>"
+                ), parse_mode="HTML")
+                return
+
+            status = bs.get_status()
+            mode_emoji = "🟢 LIVE" if status["mode"] == "live" else "🔵 DRY RUN"
+
+            dep = status["total_deployed"]
+            pool = status["current_pool"]
+            total = max(1, dep + pool)
+            bar_len = int(dep / total * 20)
+            pool_bar = "█" * bar_len + "░" * (20 - bar_len)
+
+            tier_lines = ""
+            from bond_spreader import TIER_CONFIG as _TC
+            for tk in ["A", "B", "C"]:
+                td = status["tiers"].get(tk, {})
+                if td.get("resolved", 0) > 0:
+                    tier_lines += (
+                        f"  {td['label']}: "
+                        f"{td['win_rate']:.0f}% WR ({td['resolved']} bets) "
+                        f"${td['pnl']:+.2f}\n"
+                    )
+                    if td.get("early_exits", 0):
+                        tier_lines += f"    ↗ {td['early_exits']} early exits\n"
+                    if td.get("cut_losses", 0):
+                        tier_lines += f"    🛡 {td['cut_losses']} losses cut\n"
+
+            cat_lines = ""
+            for cat, amount in sorted(
+                status.get("categories", {}).items(), key=lambda x: -x[1]
+            ):
+                if amount > 0:
+                    cs = status.get("category_stats", {}).get(cat, {})
+                    wr_str = ""
+                    if cs.get("bets", 0) > 0:
+                        wr = cs["wins"] / cs["bets"] * 100
+                        wr_str = f" ({wr:.0f}% WR)"
+                    cat_lines += f"  {cat.title()}: ${amount:.2f}{wr_str}\n"
+
+            msg = (
+                f"🏦 <b>BOND SPREAD AUTOMATOR</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Mode: {mode_emoji}\n"
+                f"Active: <b>{status['active_bets']}</b> bets\n"
+                f"Pool: ${status['current_pool']:.2f} "
+                f"(started ${status['initial_capital']:.2f})\n"
+                f"Deployed: ${status['total_deployed']:.2f}\n"
+                f"[{pool_bar}]\n\n"
+                f"📊 <b>Performance:</b>\n"
+                f"  Resolved: {status['total_resolved']} bets\n"
+                f"  Win Rate: <b>{status['win_rate']:.1f}%</b>\n"
+                f"  Net P&L: <b>${status['net_pnl']:+.2f}</b> "
+                f"({status['roi_pct']:+.1f}% ROI)\n"
+                f"  Profits: ${status['total_profits']:.2f} | "
+                f"Losses: ${status['total_losses']:.2f}\n"
+                f"  Withdrawn: ${status['withdrawn']:.2f}\n\n"
+            )
+            if tier_lines:
+                msg += f"📈 <b>Tier Breakdown:</b>\n{tier_lines}\n"
+            if cat_lines:
+                msg += f"🏷 <b>Category Allocation:</b>\n{cat_lines}\n"
+            msg += (
+                "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "/bonds start · /bonds stop\n"
+                "/bonds live · /bonds dryrun"
+            )
+            self._send(chat_id, msg, parse_mode="HTML")
+            return
+
+        # Control commands: whale-only (or admin)
+        if tier != "whale_tier" and not self._is_admin(chat_id):
+            self._send(chat_id, (
+                "🔒 Bond Spreader control requires Whale plan ($15/mo).\n"
+                "Pro users can view status with /bonds\n"
+                "💡 /upgrade to unlock"
+            ))
+            return
+
+        if subcmd == "start":
+            if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not loaded.")
+                return
+            bs.enabled = True
+            bs._save_state()
+            self._send(chat_id, (
+                f"🟢 <b>Bond Spreader STARTED</b>\n"
+                f"Mode: {'🟢 LIVE' if bs.mode == 'live' else '🔵 DRY RUN'}\n"
+                f"Capital: ${bs.max_deployed:.0f}\n"
+                f"Base bet: ${bs.base_amount:.2f}\n\n"
+                f"Bot will auto-deploy on next scan cycle (60s)."
+            ), parse_mode="HTML")
+
+        elif subcmd == "stop":
+            if not bs:
+                return
+            count = bs.emergency_stop()
+            self._send(chat_id, (
+                f"🔴 <b>Bond Spreader STOPPED</b>\n"
+                f"Cancelled {count} active bets.\n"
+                f"All capital returned to pool."
+            ), parse_mode="HTML")
+
+        elif subcmd == "live":
+            if bs:
+                bs.mode = "live"
+                bs._save_state()
+                self._send(chat_id, (
+                    "🟢 <b>LIVE MODE</b>\n"
+                    "⚠️ Real USDC will be used!\n"
+                    "Make sure wallet is connected: /wallet status"
+                ), parse_mode="HTML")
+
+        elif subcmd == "dryrun":
+            if bs:
+                bs.mode = "dry_run"
+                bs._save_state()
+                self._send(chat_id, "🔵 Switched to DRY RUN mode.")
+
+        elif subcmd == "set" and len(parts) >= 4:
+            if not bs:
+                return
+            param = parts[2].lower()
+            try:
+                value = float(parts[3])
+            except ValueError:
+                self._send(chat_id, "Value must be a number.")
+                return
+            if param == "amount":
+                bs.base_amount = max(0.10, min(100, value))
+                bs._save_state()
+                self._send(chat_id, f"✅ Base bet amount: ${bs.base_amount:.2f}")
+            elif param == "max":
+                bs.max_deployed = max(10, min(100000, value))
+                bs.session.initial_capital = bs.max_deployed
+                bs.session.current_pool = bs.max_deployed
+                bs._save_state()
+                self._send(chat_id, f"✅ Max deployed capital: ${bs.max_deployed:.0f}")
+            elif param == "reinvest":
+                bs.session.reinvest_rate = max(0, min(1.0, value / 100.0))
+                bs._save_state()
+                self._send(chat_id,
+                           f"✅ Reinvest rate: {bs.session.reinvest_rate * 100:.0f}%")
+            else:
+                self._send(chat_id, (
+                    "📝 Usage:\n"
+                    "  /bonds set amount 2.00\n"
+                    "  /bonds set max 500\n"
+                    "  /bonds set reinvest 80"
+                ))
+
+        elif subcmd == "history":
+            if not bs:
+                return
+            recent = bs.session.resolved_bets[-15:]
+            if not recent:
+                self._send(chat_id, "No resolved bets yet.")
+                return
+            msg = "📜 <b>RECENT BONDS</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            for b in reversed(recent):
+                s = b.get("status", "?")
+                emoji = {"won": "✅", "lost": "❌", "sold_profit": "📈",
+                         "sold_loss": "🛡", "cancelled": "⚪"}.get(s, "⚪")
+                msg += (
+                    f"{emoji} {b.get('market_title', '?')[:40]}\n"
+                    f"   {b.get('side', '')} @ {b.get('price', 0):.2f} | "
+                    f"${b.get('pnl', 0):+.2f}\n\n"
+                )
+            self._send(chat_id, msg, parse_mode="HTML")
+
+        else:
+            self._send(chat_id, (
+                "🏦 <b>Bond Spreader Commands:</b>\n"
+                "  /bonds — Status dashboard\n"
+                "  /bonds start — Start auto-betting\n"
+                "  /bonds stop — Emergency stop\n"
+                "  /bonds live — Enable real trading\n"
+                "  /bonds dryrun — Simulation mode\n"
+                "  /bonds set amount 2.00 — Base bet size\n"
+                "  /bonds set max 500 — Max capital\n"
+                "  /bonds set reinvest 80 — Reinvest %\n"
+                "  /bonds history — Recent results"
+            ), parse_mode="HTML")
+
+    # ------------------------------------------------------------------
+    # Wallet Management Commands
+    # ------------------------------------------------------------------
+    def _cmd_wallet(self, chat_id: str, text: str):
+        """Wallet management for trading execution."""
+        tier = self._get_tier(chat_id)
+        if tier == "free":
+            self._send(chat_id, (
+                "💳 <b>Wallet</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Connect your Polymarket wallet to trade directly\n"
+                "from signals — no website needed.\n\n"
+                "🔒 Requires Pro plan.\n💡 /upgrade to unlock"
+            ), parse_mode="HTML")
+            return
+
+        parts = text.strip().split()
+        subcmd = parts[1].lower() if len(parts) > 1 else ""
+        ee = getattr(self, 'execution_engine', None)
+
+        if not subcmd or subcmd == "status":
+            if ee:
+                self._send(chat_id, ee.format_wallet_status(chat_id),
+                           parse_mode="HTML")
+            else:
+                self._send(chat_id, "💳 Execution engine not available.")
+            return
+
+        if subcmd == "set" and len(parts) >= 4:
+            if not ee:
+                self._send(chat_id, "💳 Execution engine not available.")
+                return
+            private_key = parts[2]
+            funder_address = parts[3]
+            # Delete the message containing the private key immediately
+            try:
+                msg_id = getattr(self, '_last_msg_id', None)
+                if msg_id:
+                    requests.post(
+                        f"https://api.telegram.org/bot{self.token}/deleteMessage",
+                        json={"chat_id": chat_id, "message_id": msg_id},
+                    )
+            except Exception:
+                pass
+
+            ok = ee.wallet_manager.store_wallet(
+                chat_id, private_key, funder_address
+            )
+            if ok:
+                self._send(chat_id, (
+                    "✅ <b>Wallet connected!</b>\n"
+                    "🔐 Key encrypted and stored securely.\n"
+                    "Mode: 🟡 DRY RUN (use /wallet live to enable)\n\n"
+                    "⚠️ Your message with the key was deleted."
+                ), parse_mode="HTML")
+            else:
+                self._send(chat_id, "❌ Failed to store wallet. Try again.")
+            return
+
+        if subcmd == "live":
+            if ee and ee.wallet_manager.has_wallet(chat_id):
+                ee.wallet_manager.set_mode(chat_id, "live")
+                self._send(chat_id, (
+                    "🟢 <b>LIVE MODE</b>\n"
+                    "⚠️ Real USDC orders will be placed!\n"
+                    "Check limits: /wallet status"
+                ), parse_mode="HTML")
+            else:
+                self._send(chat_id, "❌ No wallet connected. Use /wallet set KEY ADDRESS")
+            return
+
+        if subcmd == "dryrun":
+            if ee and ee.wallet_manager.has_wallet(chat_id):
+                ee.wallet_manager.set_mode(chat_id, "dry_run")
+                self._send(chat_id, "🔵 Switched to DRY RUN mode.")
+            return
+
+        if subcmd == "limit" and len(parts) >= 3:
+            if ee and ee.wallet_manager.has_wallet(chat_id):
+                try:
+                    val = float(parts[2])
+                    ee.wallet_manager.set_limits(chat_id, max_per_trade=val)
+                    self._send(chat_id, f"✅ Max per trade: ${val:.0f}")
+                except ValueError:
+                    self._send(chat_id, "❌ Value must be a number")
+            return
+
+        if subcmd == "daily" and len(parts) >= 3:
+            if ee and ee.wallet_manager.has_wallet(chat_id):
+                try:
+                    val = float(parts[2])
+                    ee.wallet_manager.set_limits(chat_id, daily_limit=val)
+                    self._send(chat_id, f"✅ Daily limit: ${val:.0f}")
+                except ValueError:
+                    self._send(chat_id, "❌ Value must be a number")
+            return
+
+        if subcmd == "remove":
+            if ee and ee.wallet_manager.remove_wallet(chat_id):
+                self._send(chat_id, "✅ Wallet removed. All keys deleted.")
+            else:
+                self._send(chat_id, "❌ No wallet to remove.")
+            return
+
+        self._send(chat_id, (
+            "💳 <b>Wallet Commands:</b>\n"
+            "  /wallet — Status\n"
+            "  /wallet set KEY ADDRESS — Connect\n"
+            "  /wallet live — Enable trading\n"
+            "  /wallet dryrun — Simulation\n"
+            "  /wallet limit 50 — Max per trade\n"
+            "  /wallet daily 200 — Daily cap\n"
+            "  /wallet remove — Disconnect"
+        ), parse_mode="HTML")

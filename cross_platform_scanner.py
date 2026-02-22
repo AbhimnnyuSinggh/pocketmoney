@@ -95,6 +95,8 @@ def fetch_polymarket_markets(cfg: dict) -> list[dict]:
                     "closed": m.get("closed", False),
                     "created_at": m.get("createdAt", ""),
                     "start_date": m.get("startDate", ""),
+                    "condition_id": m.get("conditionId", ""),
+                    "clob_token_ids": json.loads(m["clobTokenIds"]) if isinstance(m.get("clobTokenIds"), str) else (m.get("clobTokenIds") or []),
                 })
             except (ValueError, IndexError, TypeError):
                 continue
@@ -187,6 +189,7 @@ class Opportunity:
     condition_id: str = ""
     yes_token_id: str = ""
     no_token_id: str = ""
+    token_ids: list = field(default_factory=list)  # [yes_token, no_token] for bond spreader
 # =========================================================================
 # STRATEGY 1: Cross-Platform Arbitrage
 # =========================================================================
@@ -362,6 +365,9 @@ def find_cross_platform_arbs(
                 risk_level="very_low",
                 hold_time=poly.get("end_date", ""),
                 category=poly.get("category", ""),
+                market_slug=poly.get("slug", ""),
+                condition_id=poly.get("condition_id", ""),
+                token_ids=poly.get("clob_token_ids", []),
             )
             opportunities.append(opp)
             logger.info(
@@ -420,6 +426,9 @@ def find_high_prob_bonds(
                 risk_level="low" if price >= 0.95 else "medium",
                 hold_time=m.get("end_date", ""),
                 category=m.get("category", ""),
+                market_slug=m.get("slug", ""),
+                condition_id=m.get("condition_id", ""),
+                token_ids=m.get("clob_token_ids", []),
             )
             opportunities.append(opp)
     # Sort by ROI descending

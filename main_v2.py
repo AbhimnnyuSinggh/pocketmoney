@@ -74,6 +74,15 @@ try:
     from portfolio_rotator import PortfolioRotator
 except ImportError:
     PortfolioRotator = None
+# Execution Engine + Bond Spreader
+try:
+    from execution_engine import ExecutionEngine
+except ImportError:
+    ExecutionEngine = None
+try:
+    from bond_spreader import BondSpreader
+except ImportError:
+    BondSpreader = None
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -226,6 +235,60 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
         except Exception as e:
             logger.error(f"Manifold adapter error: {e}", exc_info=True)
 
+    # === Bond Spread Automator ===
+    if BondSpreader and cfg.get("bond_spreader", {}).get("enabled", False):
+        try:
+            if not hasattr(bot_handler, '_bond_spreader') or bot_handler._bond_spreader is None:
+                exec_engine = getattr(bot_handler, 'execution_engine', None)
+                bot_handler._bond_spreader = BondSpreader(cfg, exec_engine)
+                logger.info("Bond Spreader initialized")
+
+            bs = bot_handler._bond_spreader
+
+            # 1. Check resolutions (frees capital)
+            resolved = bs.check_resolutions()
+            for r in resolved:
+                emoji = "✅" if r["won"] else "❌"
+                pnl_str = f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+                bot_handler._send_admin(
+                    f"{emoji} Bond {r['tier']}: {r['title']}\n"
+                    f"{'Won' if r['won'] else 'Lost'} {pnl_str} "
+                    f"({r['side']} @ {r['price']:.2f})"
+                )
+
+            # 2. Monitor active bets (loss cutting + early exit)
+            monitor = bs.monitor_active_bets()
+            for sold in monitor.get("sold_loss", []):
+                bot_handler._send_admin(
+                    f"🛡 LOSS CUT: {sold['title']}\n"
+                    f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
+                    f"Saved: ${sold['saved']:.2f} vs full loss"
+                )
+            for sold in monitor.get("sold_profit", []):
+                bot_handler._send_admin(
+                    f"📈 EARLY EXIT: {sold['title']}\n"
+                    f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
+                    f"Profit: +${sold['profit']:.2f} in {sold['days_held']:.1f}d\n"
+                    f"Daily ROI: {sold['daily_roi_sell']:.1f}% vs hold {sold['daily_roi_hold']:.1f}%"
+                )
+
+            # 3. Deploy new bets
+            new_bets = bs.scan_and_deploy(poly_markets)
+            if new_bets:
+                total_amt = sum(b.get("amount", 0) for b in new_bets)
+                buckets = {}
+                for b in new_bets:
+                    bk = b.get("time_bucket", "?")
+                    buckets[bk] = buckets.get(bk, 0) + 1
+                bucket_str = " ".join(f"{k}:{v}" for k, v in sorted(buckets.items()))
+                bot_handler._send_admin(
+                    f"🏦 Spread: +{len(new_bets)} bets (${total_amt:.2f})\n"
+                    f"Buckets: {bucket_str}"
+                )
+
+        except Exception as e:
+            logger.error(f"Bond spreader error: {e}", exc_info=True)
+
     if not opportunities:
         logger.info("No opportunities this cycle")
         send_no_opportunities_message(cycle, cfg)
@@ -267,6 +330,22 @@ def main():
         "enabled": True,
         "cache_file": "known_markets.json",
     })
+    cfg.setdefault("bond_spreader", {
+        "enabled": False,
+        "mode": "dry_run",
+        "base_amount": 1.00,
+        "max_total_deployed": 100.00,
+        "max_per_category_pct": 20,
+        "min_liquidity": 5000,
+        "min_volume": 1000,
+        "min_price": 0.93,
+        "max_resolution_days": 7,
+        "reinvest_rate": 0.80,
+        "adaptive_sizing": True,
+        "adaptive_min_samples": 50,
+        "limit_order_offset": 0.005,
+        "limit_order_timeout_minutes": 15,
+    })
     setup_logging(cfg)
     logger.info("=" * 60)
     logger.info("  Multi-Platform Prediction Market Arb Bot v2.0")
@@ -302,6 +381,17 @@ def main():
             bot_handler.sentiment_engine = SentimentEngine(cfg)
         except Exception as e:
             logger.warning(f"Sentiment Engine init error: {e}")
+
+    # Initialize Execution Engine for trading
+    if ExecutionEngine:
+        try:
+            bot_handler.execution_engine = ExecutionEngine(cfg)
+            logger.info("Execution Engine initialized")
+        except Exception as e:
+            bot_handler.execution_engine = None
+            logger.warning(f"Execution Engine init error: {e}")
+    else:
+        bot_handler.execution_engine = None
 
     # Strand.trade Whale: Initialize WhaleVault and attach to bot
     try:

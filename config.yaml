@@ -154,6 +154,23 @@ lp_farming:
   api_max_retries: 5           # Retries before cancel-all safe mode
   api_retry_backoff: 10        # Seconds between retries (multiplied by attempt #)
 
+# ---------- Bond Spread Automator ----------
+bond_spreader:
+  enabled: false
+  mode: "dry_run"
+  base_amount: 1.00
+  max_total_deployed: 100.00
+  max_per_category_pct: 20
+  min_liquidity: 5000
+  min_volume: 1000
+  min_price: 0.93
+  max_resolution_days: 7
+  prefer_resolution_hours: 24
+  reinvest_rate: 0.80
+  adaptive_sizing: true
+  adaptive_min_samples: 50
+  limit_order_offset: 0.005
+  limit_order_timeout_minutes: 15
 # ---------- Logging ----------
 logging:
   level: "INFO"
