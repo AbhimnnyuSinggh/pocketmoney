@@ -807,12 +807,12 @@ class TelegramBotHandler:
         return True
     # -----------------------------------------------------------------
     # Telegram API helpers
-    # -----------------------------------------------------------------
     def _send(
         self,
         chat_id: str,
         text: str,
         keyboard: dict | None = None,
+        **kwargs
     ) -> bool:
         if not self.enabled:
             return False
