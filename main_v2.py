@@ -81,7 +81,9 @@ except ImportError:
     ExecutionEngine = None
 try:
     from bond_spreader import BondSpreader
-except ImportError:
+except Exception as e:
+    import logging
+    logging.getLogger("arb_bot.main").error(f"CRITICAL: Failed to import BondSpreader: {e}", exc_info=True)
     BondSpreader = None
 # ---------------------------------------------------------------------------
 # Logging
