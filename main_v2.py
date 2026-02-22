@@ -238,6 +238,7 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
             logger.error(f"Manifold adapter error: {e}", exc_info=True)
 
     # === Bond Spread Automator ===
+    logger.info(f"DEBUG: BondSpreader initialized={BondSpreader is not None}, config_enabled={cfg.get('bond_spreader', {}).get('enabled', False)}")
     if BondSpreader and cfg.get("bond_spreader", {}).get("enabled", False):
         try:
             if not hasattr(bot_handler, '_bond_spreader') or bot_handler._bond_spreader is None:
