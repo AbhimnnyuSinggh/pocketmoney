@@ -56,19 +56,15 @@ class StatusHandler(BaseHTTPRequestHandler):
         pass  # Suppress request logs
 def run_bot():
     """Run the main bot loop. Called in a background thread."""
-    import signal
     from datetime import datetime, timezone
     from config_loader import load_config
-    from cross_platform_scanner import run_full_cross_platform_scan
-    from whale_tracker import find_whale_opportunities
-    from new_market_sniper import find_new_market_opportunities
+    from main_v2 import run_cycle, setup_logging
     from telegram_bot import TelegramBotHandler
     from telegram_alerts_v2 import (
-        send_opportunities_batch,
         send_startup_message,
         send_no_opportunities_message,
-        send_telegram_message,
     )
+    
     cfg = load_config("config.yaml")
     
     # Update status name
@@ -88,28 +84,29 @@ def run_bot():
         "enabled": True,
         "cache_file": "known_markets.json",
     })
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] %(levelname)-8s %(name)s — %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    
+    setup_logging(cfg)
     log = logging.getLogger("arb_bot.main")
+    
     log.info("=" * 60)
     log.info("  Multi-Platform Arb Bot v2.0 (Web Service Mode)")
     log.info(f"  Platforms: Polymarket + Kalshi")
     log.info("=" * 60)
+    
     if cfg["telegram"]["enabled"]:
         try:
             send_startup_message(cfg)
         except Exception as e:
             log.error(f"Startup message error: {e}", exc_info=True)
+            
     # Start interactive bot handler
     bot_handler = TelegramBotHandler(cfg)
     bot_handler.start_polling()
     log.info("Interactive signal selector active")
+    
     cycle = 0
     interval = cfg["scanner"]["interval_seconds"]
+    
     while True:
         cycle += 1
         bot_status["cycles"] = cycle
@@ -117,41 +114,22 @@ def run_bot():
             "%Y-%m-%d %H:%M:%S UTC"
         )
         bot_status["bot_alive"] = True
-        log.info(f"Scan cycle #{cycle}")
+        
         try:
-            opportunities, poly_markets = run_full_cross_platform_scan(cfg)
-        except Exception as e:
-            log.error(f"Scan error: {e}", exc_info=True)
-            opportunities = []
-            poly_markets = []
-            bot_status["last_error"] = f"Scan: {str(e)[:200]}"
-        # Whale convergence
-        try:
-            whale_opps = find_whale_opportunities(cfg)
-            opportunities.extend(whale_opps)
-        except Exception as e:
-            log.error(f"Whale tracker error: {e}", exc_info=True)
-        # New market sniper
-        try:
-            new_market_opps = find_new_market_opportunities(cfg, existing_markets=poly_markets)
-            opportunities.extend(new_market_opps)
-        except Exception as e:
-            log.error(f"New market sniper error: {e}", exc_info=True)
-        bot_status["opportunities_found"] += len(opportunities)
-        if opportunities:
-            log.info(
-                f"🚨 {len(opportunities)} opportunities found — distributing!"
-            )
-            try:
+            # RUN THE REAL CYCLE FROM MAIN_V2 WHICH INCLUDES BOND SPREADER
+            opportunities = run_cycle(cfg, cycle, bot_handler)
+            bot_status["opportunities_found"] += len(opportunities)
+            
+            if opportunities:
+                log.info(f"🚨 {len(opportunities)} opportunities found — distributing!")
                 bot_handler.distribute_signals(opportunities, cfg)
-            except Exception as e:
-                log.error(f"Signal distribution error: {e}", exc_info=True)
-                bot_status["last_error"] = f"Distribute: {str(e)[:200]}"
-        else:
-            try:
+            else:
                 send_no_opportunities_message(cycle, cfg)
-            except Exception:
-                pass
+                
+        except Exception as e:
+            log.error(f"Cycle error: {e}", exc_info=True)
+            bot_status["last_error"] = f"Cycle: {str(e)[:200]}"
+            
         time.sleep(interval)
 def _run_bot_safe():
     """
