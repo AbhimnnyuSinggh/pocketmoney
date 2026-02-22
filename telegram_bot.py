@@ -3712,16 +3712,22 @@ class TelegramBotHandler:
     # ------------------------------------------------------------------
     def _cmd_bonds(self, chat_id: str, text: str):
         """Bond Spread Automator commands."""
+        logger.error(f">>> ENTER _cmd_bonds: chat_id={chat_id}, text='{text}'")
         tier = self._get_tier(chat_id)
         is_admin = self._is_admin(chat_id)
+        logger.error(f">>> TIER: {tier}, ADMIN: {is_admin}")
         parts = text.strip().split()
         subcmd = parts[1].lower() if len(parts) > 1 else ""
+        logger.error(f">>> SUBCMD: '{subcmd}'")
 
         bs = getattr(self, '_bond_spreader', None)
+        logger.error(f">>> BS LOADS: {bs is not None}")
 
         # /bonds — status
         if not subcmd or subcmd == "status":
+            logger.error(">>> ENTERED STATUS BLOCK")
             if tier == "free" and not is_admin:
+                logger.error(">>> EXIT: FREE TIER")
                 self._send(chat_id, (
                     "🏦 <b>Bond Spread Automator</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -3732,6 +3738,7 @@ class TelegramBotHandler:
                 ), parse_mode="HTML")
                 return
             if not bs:
+                logger.error(">>> EXIT: NOT INIT")
                 self._send(chat_id, (
                     "🏦 <b>Bond Spreader</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━\n"
