@@ -156,7 +156,7 @@ lp_farming:
 
 # ---------- Bond Spread Automator ----------
 bond_spreader:
-  enabled: false
+  enabled: true
   mode: "dry_run"
   base_amount: 1.00
   max_total_deployed: 100.00
