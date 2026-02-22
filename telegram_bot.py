@@ -828,7 +828,15 @@ class TelegramBotHandler:
             r = http_requests.post(
                 f"{self.base_url}/sendMessage", json=payload, timeout=10,
             )
-            return r.status_code == 200
+            if r.status_code != 200:
+                logger.error(f"Telegram send failed ({r.status_code}): {r.text} | Payload: {payload}")
+                if "parse_mode" in payload:
+                    logger.info("Attempting plaintext fallback...")
+                    del payload["parse_mode"]
+                    r_fallback = http_requests.post(f"{self.base_url}/sendMessage", json=payload, timeout=10)
+                    return r_fallback.status_code == 200
+                return False
+            return True
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
             return False
@@ -3823,6 +3831,7 @@ class TelegramBotHandler:
 
         elif subcmd == "stop":
             if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not initialized yet.")
                 return
             count = bs.emergency_stop()
             self._send(chat_id, (
@@ -3832,23 +3841,28 @@ class TelegramBotHandler:
             ), parse_mode="HTML")
 
         elif subcmd == "live":
-            if bs:
-                bs.mode = "live"
-                bs._save_state()
-                self._send(chat_id, (
+            if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not initialized yet.")
+                return
+            bs.mode = "live"
+            bs._save_state()
+            self._send(chat_id, (
                     "🟢 <b>LIVE MODE</b>\n"
                     "⚠️ Real USDC will be used!\n"
                     "Make sure wallet is connected: /wallet status"
                 ), parse_mode="HTML")
 
         elif subcmd == "dryrun":
-            if bs:
-                bs.mode = "dry_run"
-                bs._save_state()
-                self._send(chat_id, "🔵 Switched to DRY RUN mode.")
+            if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not initialized yet.")
+                return
+            bs.mode = "dry_run"
+            bs._save_state()
+            self._send(chat_id, "🔵 Switched to DRY RUN mode.")
 
         elif subcmd == "set" and len(parts) >= 4:
             if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not initialized yet.")
                 return
             param = parts[2].lower()
             try:
@@ -3881,6 +3895,7 @@ class TelegramBotHandler:
 
         elif subcmd == "history":
             if not bs:
+                self._send(chat_id, "⚠️ Bond spreader module not initialized yet.")
                 return
             recent = bs.session.resolved_bets[-15:]
             if not recent:
