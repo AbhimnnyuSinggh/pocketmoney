@@ -151,7 +151,7 @@ def fetch_kalshi_markets(cfg: dict) -> list[dict]:
                     "liquidity": float(m.get("open_interest", 0) or 0),
                     "end_date": m.get("close_time", ""),
                     "category": m.get("category", ""),
-                    "url": f"https://kalshi.com/markets/{m.get('ticker', '')}",
+                    "url": f"https://kalshi.com/markets/{m.get('event_ticker') or m.get('ticker', '')}",
                     "outcomes": ["Yes", "No"],
                     "outcome_prices": [yes_price, no_price],
                     "active": m.get("status") == "open",
