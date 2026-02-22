@@ -3699,6 +3699,7 @@ class TelegramBotHandler:
     def _cmd_bonds(self, chat_id: str, text: str):
         """Bond Spread Automator commands."""
         tier = self._get_tier(chat_id)
+        is_admin = self._is_admin(chat_id)
         parts = text.strip().split()
         subcmd = parts[1].lower() if len(parts) > 1 else ""
 
@@ -3706,7 +3707,7 @@ class TelegramBotHandler:
 
         # /bonds — status
         if not subcmd or subcmd == "status":
-            if tier == "free":
+            if tier == "free" and not is_admin:
                 self._send(chat_id, (
                     "🏦 <b>Bond Spread Automator</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -3735,12 +3736,12 @@ class TelegramBotHandler:
             pool_bar = "█" * bar_len + "░" * (20 - bar_len)
 
             tier_lines = ""
-            from bond_spreader import TIER_CONFIG as _TC
+            _tier_labels = {"A": "Ultra-Safe", "B": "Standard", "C": "Value"}
             for tk in ["A", "B", "C"]:
                 td = status["tiers"].get(tk, {})
                 if td.get("resolved", 0) > 0:
                     tier_lines += (
-                        f"  {td['label']}: "
+                        f"  {_tier_labels.get(tk, tk)}: "
                         f"{td['win_rate']:.0f}% WR ({td['resolved']} bets) "
                         f"${td['pnl']:+.2f}\n"
                     )
@@ -3792,7 +3793,7 @@ class TelegramBotHandler:
             return
 
         # Control commands: whale-only (or admin)
-        if tier != "whale_tier" and not self._is_admin(chat_id):
+        if tier != "whale_tier" and not is_admin:
             self._send(chat_id, (
                 "🔒 Bond Spreader control requires Whale plan ($15/mo).\n"
                 "Pro users can view status with /bonds\n"
@@ -3911,7 +3912,7 @@ class TelegramBotHandler:
     def _cmd_wallet(self, chat_id: str, text: str):
         """Wallet management for trading execution."""
         tier = self._get_tier(chat_id)
-        if tier == "free":
+        if tier == "free" and not self._is_admin(chat_id):
             self._send(chat_id, (
                 "💳 <b>Wallet</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━\n"
