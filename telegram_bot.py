@@ -300,6 +300,14 @@ class TelegramBotHandler:
         # Pending external payments awaiting admin approval
         # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ..., "dur": ...}}
         self._pending_payments: dict[str, dict] = {}
+        
+        self.routes = {}
+        try:
+            from weather_arb.commands import register_weather_commands
+            register_weather_commands(self)
+        except Exception as e:
+            import logging
+            logging.getLogger("arb_bot.main").error(f"Failed to register weather commands: {e}")
         # Banned users set (persisted in user_subs with "banned" flag)
         self.banned_users: set[str] = self._load_banned()
         # Delayed messages queue for free tier: [(chat_id, message, release_time)]
@@ -1206,6 +1214,13 @@ class TelegramBotHandler:
                 self._cmd_bonds(chat_id, text)
             elif text.startswith("/wallet"):
                 self._cmd_wallet(chat_id, text)
+            else:
+                command = text.split()[0] if text else ""
+                if command in getattr(self, "routes", {}):
+                    import asyncio
+                    res = self.routes[command](chat_id, text)
+                    if asyncio.iscoroutine(res):
+                        asyncio.run(res)
     def _on_callback(self, cb: dict):
         cb_id = cb["id"]
         data = cb.get("data", "")

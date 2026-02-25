@@ -292,6 +292,28 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
         except Exception as e:
             logger.error(f"Bond spreader error: {e}", exc_info=True)
 
+    # === Weather Arbitrage Module ===
+    if cfg.get("weather_arb", {}).get("enabled", False):
+        try:
+            if not hasattr(bot_handler, '_weather_arb') or bot_handler._weather_arb is None:
+                from weather_arb.trader import WeatherArbitrage
+                exec_engine = getattr(bot_handler, 'execution_engine', None)
+                pnl_tracker = getattr(bot_handler, 'pnl_tracker', None)
+                bot_handler._weather_arb = WeatherArbitrage(cfg, exec_engine, pnl_tracker)
+                logger.info("Weather Arbitrage initialized")
+
+            import asyncio
+            wa = bot_handler._weather_arb
+            weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
+            if weather_opps:
+                opportunities.extend(weather_opps)
+
+            # Dashboard update hook
+            asyncio.run(wa.update_dashboard())
+
+        except Exception as e:
+            logger.error(f"Weather arb error: {e}", exc_info=True)
+
     if not opportunities:
         logger.info("No opportunities this cycle")
         send_no_opportunities_message(cycle, cfg)

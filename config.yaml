@@ -171,6 +171,18 @@ bond_spreader:
   adaptive_min_samples: 50
   limit_order_offset: 0.005
   limit_order_timeout_minutes: 15
+# ---------- Weather Arbitrage ----------
+weather_arb:
+  enabled: true
+  mode: "SAFE"
+  min_edge_safe: 0.25
+  min_edge_neutral: 0.15
+  min_edge_aggressive: 0.10
+  max_daily_deploy_pct: 0.20
+  dry_run: true
+  cities: ["NYC", "Chicago", "London", "Miami", "Atlanta"]
+  climate_allocation_pct: 0.12
+
 # ---------- Logging ----------
 logging:
   level: "INFO"
