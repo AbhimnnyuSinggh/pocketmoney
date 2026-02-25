@@ -1200,6 +1200,10 @@ class TelegramBotHandler:
                 self._cmd_lp_stop(chat_id)
             elif text == "/lp markets":
                 self._cmd_lp_markets(chat_id)
+            elif text == "/lp live":
+                self._cmd_lp_live(chat_id)
+            elif text == "/lp dryrun":
+                self._cmd_lp_dryrun(chat_id)
             # --- Manual Trading Commands (admin only) ---
             elif text.startswith("/buy "):
                 self._cmd_manual_buy(chat_id, text)
@@ -3427,6 +3431,68 @@ class TelegramBotHandler:
             except Exception as e:
                 self._send(chat_id, f"❌ Error: {e}")
         threading.Thread(target=_fetch, daemon=True).start()
+
+    def _cmd_lp_live(self, chat_id: str):
+        """Switch LP engine to live trading mode."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available.")
+            return
+        if engine.is_running:
+            self._send(chat_id, "⚠️ LP is currently running. Please /lp stop first.")
+            return
+            
+        engine.om.mode = "live"
+        engine.om.save_state()
+        
+        try:
+            import yaml
+            with open("config.yaml", "r") as f:
+                full_cfg = yaml.safe_load(f)
+            if "lp_farming" not in full_cfg:
+                full_cfg["lp_farming"] = {}
+            full_cfg["lp_farming"]["lp_mode"] = "live"
+            with open("config.yaml", "w") as f:
+                yaml.dump(full_cfg, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            logger.error(f"Failed to save LP mode to config: {e}")
+            
+        self._send(chat_id, (
+            "🟢 <b>LP LIVE MODE</b>\n"
+            "⚠️ Real USDC will be used!\n"
+            "Make sure wallet is connected: /wallet status\n"
+        ), parse_mode="HTML")
+
+    def _cmd_lp_dryrun(self, chat_id: str):
+        """Switch LP engine to dry run mode."""
+        if not self._is_admin(chat_id):
+            return
+        engine = self._get_lp_engine()
+        if engine is None:
+            self._send(chat_id, "🏭 LP Engine not available.")
+            return
+        if engine.is_running:
+            self._send(chat_id, "⚠️ LP is currently running. Please /lp stop first.")
+            return
+            
+        engine.om.mode = "dry_run"
+        engine.om.save_state()
+        
+        try:
+            import yaml
+            with open("config.yaml", "r") as f:
+                full_cfg = yaml.safe_load(f)
+            if "lp_farming" not in full_cfg:
+                full_cfg["lp_farming"] = {}
+            full_cfg["lp_farming"]["lp_mode"] = "dry_run"
+            with open("config.yaml", "w") as f:
+                yaml.dump(full_cfg, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            logger.error(f"Failed to save LP mode to config: {e}")
+            
+        self._send(chat_id, "🔵 lp switched to DRY RUN mode.")
 
     def _get_lp_engine(self):
         """Lazy-init LP Engine. Returns cached instance or None."""
