@@ -34,6 +34,11 @@ class WeatherArbitrage:
         if not self.enabled:
             return []
             
+        if not getattr(self, "db_initialized", False):
+            from weather_arb.db import init_db
+            await init_db()
+            self.db_initialized = True
+            
         weather_markets = get_active_weather_markets(poly_markets)
         if not weather_markets:
             return []
@@ -53,7 +58,7 @@ class WeatherArbitrage:
             # Parse daily max temps for models
             try:
                 daily = forecast_data.get("daily", {})
-                models = ["gfs_seamless", "ecmwf_seamless", "icon_seamless"]
+                models = ["gfs_seamless", "ecmwf_ifs04", "icon_seamless"]
                 forecasts = {}
                 for mod in models:
                     temps = daily.get(f"temperature_2m_max_{mod}", [])
@@ -73,17 +78,20 @@ class WeatherArbitrage:
             
             # Find edge calculations for each outcome
             prices = m.get("outcome_prices", [])
+            token_ids = m.get("clob_token_ids", [])
             for i, bin_title in enumerate(target_bins):
-                if i >= len(prices):
+                if i >= len(prices) or i >= len(token_ids):
                     break
                 market_price = prices[i]
                 model_prob = bin_probs.get(bin_title, 0.0)
                 
                 pos = calculate_position(market_price, model_prob, self.mode, self.bankroll, m.get("is_new_launch", False))
                 if pos:
+                    slug = m.get("slug", "")
                     opp = {
                         "platform": "polymarket",
                         "market_id": m.get("market_id"),
+                        "slug": slug,
                         "title": m.get("title"),
                         "type": "WEATHER_ARB",
                         "bin": bin_title,
@@ -91,17 +99,53 @@ class WeatherArbitrage:
                         "size": pos["size_usdc"],
                         "expected_ev": pos["expected_ev"]
                     }
+                    pos["token_id"] = token_ids[i]
+                    pos["price"] = market_price
                     opportunities.append(opp)
                     
                     if not self.dry_run and self.exec_engine:
-                        await self._execute_trade(m.get("market_id"), bin_title, pos)
+                        await self._execute_trade(slug, bin_title, pos)
 
         return opportunities
         
     async def _execute_trade(self, slug: str, bin_title: str, pos: dict):
         logger.info(f"Executing weather trade on {slug} [{bin_title}] for ${pos['size_usdc']} (Edge: {pos['edge']:.2f})")
-        # Direct integration hook for ExecutionEngine
-        pass
+        
+        try:
+            admin_id = getattr(self.exec_engine, "_admin_chat_id", "")
+            client = self.exec_engine._get_client(admin_id) if admin_id else None
+            
+            if not client:
+                logger.error("No valid ClobClient found. Ensure WALLET_ADDRESS and POLY_PRIVATE_KEY are set.")
+                return
+
+            from py_clob_client.order_builder.constants import BUY
+            shares = pos['size_usdc'] / pos['price']
+            
+            order = client.create_order(
+                token_id=pos['token_id'],
+                price=round(pos['price'], 4),
+                size=round(shares, 4),
+                side=BUY,
+            )
+            
+            resp = client.post_order(order)
+            
+            logger.info(f"Weather Arb Order Placed Successfully: {resp}")
+            
+            # Log the trade to SQLite
+            await log_trade(
+                market_slug=slug,
+                outcome_bin=bin_title,
+                side="BUY",
+                size=pos['size_usdc'],
+                price=pos['price'],
+                mode=pos['mode_used'],
+                edge=pos['edge']
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to execute weather trade: {e}", exc_info=True)
 
     async def update_dashboard(self):
         """Hook to trigger daily SQLite digest and PNL aggregation."""

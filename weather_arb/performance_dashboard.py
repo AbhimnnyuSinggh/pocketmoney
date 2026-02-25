@@ -3,11 +3,12 @@ weather_arb/performance_dashboard.py
 Generates Markdown performance reports for Telegram based on SQLite history.
 """
 import aiosqlite
-from weather_arb.db import WEATHER_DB_PATH
+from weather_arb.db import WEATHER_DB_PATH, init_db
 from weather_arb.config import TradingMode
 
 async def get_dashboard(period="daily") -> str:
     """Generate a Markdown string summarizing performance."""
+    await init_db()
     try:
         async with aiosqlite.connect(WEATHER_DB_PATH) as db:
             # Aggregate stats
