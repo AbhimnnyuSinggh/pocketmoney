@@ -31,8 +31,14 @@ def register_weather_commands(handler):
     async def cmd_perf(chat_id: str, text: str):
         if not handler._is_admin(chat_id):
             return
-        report = await get_dashboard()
-        handler._send(chat_id, report)
+        report, img_path = await get_dashboard()
+        
+        # We can send the photo containing the markdown as its caption,
+        # or send them sequentially. Let's send photo with caption if available.
+        if img_path:
+            handler._send_photo(chat_id, img_path, caption=report)
+        else:
+            handler._send(chat_id, report)
 
     def cmd_weather_dryrun(chat_id: str, text: str):
         if not handler._is_admin(chat_id):

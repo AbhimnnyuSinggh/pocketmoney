@@ -848,6 +848,33 @@ class TelegramBotHandler:
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
             return False
+
+    def _send_photo(self: "TelegramBotHandler", chat_id: str, photo_path: str, caption: str | None = None) -> bool:
+        """Upload and send a local photo file."""
+        if not self.enabled:
+            return False
+        if not os.path.exists(photo_path):
+            logger.error(f"Cannot send photo: file not found at {photo_path}")
+            return False
+
+        url = f"{self.base_url}/sendPhoto"
+        data = {"chat_id": chat_id}
+        if caption:
+            data["caption"] = caption
+            data["parse_mode"] = "Markdown"
+            
+        try:
+            with open(photo_path, "rb") as f:
+                files = {"photo": f}
+                r = http_requests.post(url, data=data, files=files, timeout=20)
+                
+            if r.status_code != 200:
+                logger.error(f"Telegram sendPhoto failed ({r.status_code}): {r.text}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Telegram sendPhoto error: {e}")
+            return False
     def _answer_callback(self, cb_id: str, text: str = ""):
         try:
             http_requests.post(
