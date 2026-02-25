@@ -4070,6 +4070,15 @@ class TelegramBotHandler:
         parts = text.strip().split()
         subcmd = parts[1].lower() if len(parts) > 1 else ""
         ee = getattr(self, 'execution_engine', None)
+        
+        # DEBUG INJECTION
+        if not ee:
+            try:
+                import sys
+                raw = getattr(self, 'execution_engine', 'ACTUALLY MISSING')
+                self._send(chat_id, f"🚨 DEBUG DUMP: execution_engine={raw} type={type(raw)}")
+            except Exception as e:
+                self._send(chat_id, f"🚨 DEBUG DUMP CRASH: {e}")
 
         if not subcmd or subcmd == "status":
             if ee:
