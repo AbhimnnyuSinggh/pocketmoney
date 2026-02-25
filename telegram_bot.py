@@ -1866,6 +1866,54 @@ class TelegramBotHandler:
             logger.error(f"Failed to save active_autotrader: {e}")
             
         self._send(chat_id, f"✅ <b>Active Auto-Trader changed to:</b> {mod_key.upper()}\n100% of capital will be routed here.", parse_mode="HTML")
+        
+        # 3. Send Step-by-Step Setup Guide based on selected module
+        if mod_key == "weather":
+            tutorial = (
+                f"🌤 <b>WEATHER BOT INCUBATOR</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"You have allocated 100% of your capital to the Weather Bot.\n\n"
+                f"<b>Step 1: Connect Wallet</b> 💳\n"
+                f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
+                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"Use `/wallet live` to allow real USDC spending.\n\n"
+                f"<b>Step 3: Arm the Weather Module</b> ☔\n"
+                f"Use `/weather_dryrun off` to start deploying capital to forecasts.\n\n"
+                f"<b>Step 4: Monitoring</b> 📊\n"
+                f"Use `/perf` to see the win-rate and profit chart of this bot!"
+            )
+            self._send(chat_id, tutorial)
+        elif mod_key == "bonds":
+            tutorial = (
+                f"🏦 <b>BOND SPREADER INCUBATOR</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"You have allocated 100% of your capital to the Bond Spreader.\n\n"
+                f"<b>Step 1: Connect Wallet</b> 💳\n"
+                f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
+                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"Use `/wallet live` to allow real USDC spending.\n\n"
+                f"<b>Step 3: Arm the Bond Module</b> 🛡️\n"
+                f"Use `/bonds live` to start buying $0.93+ guaranteed-yield shares.\n\n"
+                f"<b>Step 4: Monitoring</b> 📊\n"
+                f"Use `/bonds` to see your active bond portfolio and total yield."
+            )
+            self._send(chat_id, tutorial)
+        elif mod_key == "lp":
+            tutorial = (
+                f"🏭 <b>LP ENGINE INCUBATOR</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"You have allocated 100% of your capital to the LP Market Maker.\n\n"
+                f"<b>Step 1: Connect Wallet</b> 💳\n"
+                f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
+                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"Use `/wallet live` to allow real USDC spending.\n\n"
+                f"<b>Step 3: Arm the LP Module</b> 💰\n"
+                f"Use `/lp live` to allow the bot to place two-sided maker limit orders.\n\n"
+                f"<b>Step 4: Monitoring</b> 📊\n"
+                f"Use `/lp status` to see your maker volume, spread width, and LP PnL."
+            )
+            self._send(chat_id, tutorial)
+            
         self._cmd_autotrade(chat_id)
 
     def _select_duration(self, chat_id: str, dur_key: str):
