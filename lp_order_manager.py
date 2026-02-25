@@ -124,7 +124,8 @@ class LPOrderManager:
         self.state_file = lp_cfg.get("state_file", "lp_state.json")
 
         # Risk caps
-        self.max_lp_capital = lp_cfg.get("max_lp_capital", 300.0)
+        allocs = cfg.get("bankroll", {}).get("allocations", {})
+        self.max_lp_capital = allocs.get("poly_lp", lp_cfg.get("max_lp_capital", 300.0))
         self.max_position_one_side = lp_cfg.get("max_position_one_side", 150.0)
         self.max_loss_per_session = lp_cfg.get("max_loss_per_session", 20.0)
         self.order_size = lp_cfg.get("order_size", 50.0)

@@ -111,9 +111,18 @@ logger = logging.getLogger("arb_bot.main")
 # Main Loop
 # ---------------------------------------------------------------------------
 def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = None) -> list[Opportunity]:
-    """Execute one full scan cycle across all platforms."""
-    logger.info(f"{'='*60}")
-    logger.info(f"Scan cycle #{cycle} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    """
+    Main loop iteration:
+    1. Check resolutions
+    2. Fetch live data
+    3. Analyze/score
+    4. Auto-trade & distribute
+    """
+    if bot_handler and getattr(bot_handler, 'global_kill', False):
+        logger.warning("🚨 GLOBAL KILL SWITCH ACTIVE — Skipping scan cycle 🚨")
+        return []
+
+    logger.info(f"--- Starting Scan Cycle #{cycle} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"{'='*60}")
     try:
         opportunities, poly_markets = run_full_cross_platform_scan(cfg)
@@ -238,56 +247,50 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
             logger.error(f"Manifold adapter error: {e}", exc_info=True)
 
     # === Bond Spread Automator ===
-    logger.info(f"DEBUG: BondSpreader initialized={BondSpreader is not None}, config_enabled={cfg.get('bond_spreader', {}).get('enabled', False)}")
-    if BondSpreader and cfg.get("bond_spreader", {}).get("enabled", False):
+    if cfg.get("bond_spreader", {}).get("enabled", False):
         try:
-            if not hasattr(bot_handler, '_bond_spreader') or bot_handler._bond_spreader is None:
-                exec_engine = getattr(bot_handler, 'execution_engine', None)
-                bot_handler._bond_spreader = BondSpreader(cfg, exec_engine)
-                logger.info("Bond Spreader initialized")
+            bs = getattr(bot_handler, '_bond_spreader', None)
+            if bs:
+                # 1. Check resolutions (frees capital)
+                resolved = bs.check_resolutions()
+                for r in resolved:
+                    emoji = "✅" if r["won"] else "❌"
+                    pnl_str = f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+                    bot_handler._send_admin(
+                        f"{emoji} Bond {r['tier']}: {r['title']}\n"
+                        f"{'Won' if r['won'] else 'Lost'} {pnl_str} "
+                        f"({r['side']} @ {r['price']:.2f})"
+                    )
 
-            bs = bot_handler._bond_spreader
+                # 2. Monitor active bets (loss cutting + early exit)
+                monitor = bs.monitor_active_bets()
+                for sold in monitor.get("sold_loss", []):
+                    bot_handler._send_admin(
+                        f"🛡 LOSS CUT: {sold['title']}\n"
+                        f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
+                        f"Saved: ${sold['saved']:.2f} vs full loss"
+                    )
+                for sold in monitor.get("sold_profit", []):
+                    bot_handler._send_admin(
+                        f"📈 EARLY EXIT: {sold['title']}\n"
+                        f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
+                        f"Profit: +${sold['profit']:.2f} in {sold['days_held']:.1f}d\n"
+                        f"Daily ROI: {sold['daily_roi_sell']:.1f}% vs hold {sold['daily_roi_hold']:.1f}%"
+                    )
 
-            # 1. Check resolutions (frees capital)
-            resolved = bs.check_resolutions()
-            for r in resolved:
-                emoji = "✅" if r["won"] else "❌"
-                pnl_str = f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
-                bot_handler._send_admin(
-                    f"{emoji} Bond {r['tier']}: {r['title']}\n"
-                    f"{'Won' if r['won'] else 'Lost'} {pnl_str} "
-                    f"({r['side']} @ {r['price']:.2f})"
-                )
-
-            # 2. Monitor active bets (loss cutting + early exit)
-            monitor = bs.monitor_active_bets()
-            for sold in monitor.get("sold_loss", []):
-                bot_handler._send_admin(
-                    f"🛡 LOSS CUT: {sold['title']}\n"
-                    f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
-                    f"Saved: ${sold['saved']:.2f} vs full loss"
-                )
-            for sold in monitor.get("sold_profit", []):
-                bot_handler._send_admin(
-                    f"📈 EARLY EXIT: {sold['title']}\n"
-                    f"Entry: ${sold['entry']:.2f} → Exit: ${sold['exit']:.2f}\n"
-                    f"Profit: +${sold['profit']:.2f} in {sold['days_held']:.1f}d\n"
-                    f"Daily ROI: {sold['daily_roi_sell']:.1f}% vs hold {sold['daily_roi_hold']:.1f}%"
-                )
-
-            # 3. Deploy new bets
-            new_bets = bs.scan_and_deploy(poly_markets)
-            if new_bets:
-                total_amt = sum(b.get("amount", 0) for b in new_bets)
-                buckets = {}
-                for b in new_bets:
-                    bk = b.get("time_bucket", "?")
-                    buckets[bk] = buckets.get(bk, 0) + 1
-                bucket_str = " ".join(f"{k}:{v}" for k, v in sorted(buckets.items()))
-                bot_handler._send_admin(
-                    f"🏦 Spread: +{len(new_bets)} bets (${total_amt:.2f})\n"
-                    f"Buckets: {bucket_str}"
-                )
+                # 3. Deploy new bets
+                new_bets = bs.scan_and_deploy(poly_markets)
+                if new_bets:
+                    total_amt = sum(b.get("amount", 0) for b in new_bets)
+                    buckets = {}
+                    for b in new_bets:
+                        bk = b.get("time_bucket", "?")
+                        buckets[bk] = buckets.get(bk, 0) + 1
+                    bucket_str = " ".join(f"{k}:{v}" for k, v in sorted(buckets.items()))
+                    bot_handler._send_admin(
+                        f"🏦 Spread: +{len(new_bets)} bets (${total_amt:.2f})\n"
+                        f"Buckets: {bucket_str}"
+                    )
 
         except Exception as e:
             logger.error(f"Bond spreader error: {e}", exc_info=True)
@@ -295,24 +298,22 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
     # === Weather Arbitrage Module ===
     if cfg.get("weather_arb", {}).get("enabled", False):
         try:
-            if not hasattr(bot_handler, '_weather_arb') or bot_handler._weather_arb is None:
-                from weather_arb.trader import WeatherArbitrage
-                exec_engine = getattr(bot_handler, 'execution_engine', None)
-                pnl_tracker = getattr(bot_handler, 'pnl_tracker', None)
-                bot_handler._weather_arb = WeatherArbitrage(cfg, exec_engine, pnl_tracker)
-                logger.info("Weather Arbitrage initialized")
-
-            import asyncio
-            wa = bot_handler._weather_arb
-            weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
-            if weather_opps:
-                opportunities.extend(weather_opps)
-
-            # Dashboard update hook
-            asyncio.run(wa.update_dashboard())
-
+            wa = getattr(bot_handler, '_weather_arb', None)
+            if wa:
+                import threading
+                def _weather_thread():
+                    import asyncio
+                    try:
+                        weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
+                        if weather_opps:
+                            bot_handler.distribute_signals(weather_opps, cfg)
+                        asyncio.run(wa.update_dashboard())
+                    except Exception as e:
+                        logger.error(f"Weather arb thread error: {e}")
+                
+                threading.Thread(target=_weather_thread, daemon=True, name="weather-arb").start()
         except Exception as e:
-            logger.error(f"Weather arb error: {e}", exc_info=True)
+            logger.error(f"Weather arb init error: {e}", exc_info=True)
 
     if not opportunities:
         logger.info("No opportunities this cycle")
@@ -322,6 +323,13 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
     # Route through interactive handler if available
     # Per-user dedup is handled inside distribute_signals
     if bot_handler:
+        # 2. Add fast alerts from SpeedListener if enabled
+        fast_alerts = getattr(bot_handler, 'speed_listener', None)
+        if fast_alerts:
+            alerts = fast_alerts.get_fast_alerts()
+            if alerts:
+                opportunities.extend(alerts)
+
         bot_handler.distribute_signals(opportunities, cfg)
     else:
         send_opportunities_batch(opportunities, cfg)
@@ -385,8 +393,36 @@ def main():
     logger.info("=" * 60)
     if cfg["telegram"]["enabled"]:
         send_startup_message(cfg)
-    # Start interactive bot (polling for /start, /menu, etc.)
-    bot_handler = TelegramBotHandler(cfg)
+    # Initialize Execution Engine for trading
+    if ExecutionEngine:
+        try:
+            bot_handler.execution_engine = ExecutionEngine(cfg)
+            logger.info("Execution Engine initialized")
+        except Exception as e:
+            bot_handler.execution_engine = None
+            logger.warning(f"Execution Engine init error: {e}")
+    else:
+        bot_handler.execution_engine = None
+
+    # Initialize Bond Spreader
+    if BondSpreader and cfg.get("bond_spreader", {}).get("enabled", False):
+        try:
+            bot_handler._bond_spreader = BondSpreader(cfg, bot_handler.execution_engine)
+            logger.info("Bond Spreader initialized")
+        except Exception as e:
+            bot_handler._bond_spreader = None
+            logger.error(f"Bond Spreader init error: {e}")
+
+    # Initialize Weather Arbitrage
+    if cfg.get("weather_arb", {}).get("enabled", False):
+        try:
+            from weather_arb.trader import WeatherArbitrage
+            bot_handler._weather_arb = WeatherArbitrage(cfg, bot_handler.execution_engine, getattr(bot_handler, 'pnl_tracker', None))
+            logger.info("Weather Arbitrage initialized")
+        except Exception as e:
+            bot_handler._weather_arb = None
+            logger.error(f"Weather Arb init error: {e}")
+
     bot_handler.start_polling()
     logger.info("Interactive signal selector active")
 
@@ -406,17 +442,6 @@ def main():
             bot_handler.sentiment_engine = SentimentEngine(cfg)
         except Exception as e:
             logger.warning(f"Sentiment Engine init error: {e}")
-
-    # Initialize Execution Engine for trading
-    if ExecutionEngine:
-        try:
-            bot_handler.execution_engine = ExecutionEngine(cfg)
-            logger.info("Execution Engine initialized")
-        except Exception as e:
-            bot_handler.execution_engine = None
-            logger.warning(f"Execution Engine init error: {e}")
-    else:
-        bot_handler.execution_engine = None
 
     # Strand.trade Whale: Initialize WhaleVault and attach to bot
     try:

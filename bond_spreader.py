@@ -179,7 +179,11 @@ class BondSpreader:
         self.enabled = bs_cfg.get("enabled", False)
         self.mode = bs_cfg.get("mode", "dry_run")
         self.base_amount = bs_cfg.get("base_amount", 1.00)
-        self.max_deployed = bs_cfg.get("max_total_deployed", 100.0)
+        
+        # Pull allocated bankroll from central config to prevent double-spending
+        allocs = cfg.get("bankroll", {}).get("allocations", {})
+        self.max_deployed = allocs.get("bond_spreader", bs_cfg.get("max_total_deployed", 100.0))
+        
         self.max_category_pct = bs_cfg.get("max_per_category_pct", 20)
         self.min_price = bs_cfg.get("min_price", 0.93)
         self.max_resolution_days = bs_cfg.get("max_resolution_days", 7)

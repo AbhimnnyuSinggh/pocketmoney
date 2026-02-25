@@ -28,7 +28,8 @@ class WeatherArbitrage:
             
         self.enabled = cfg.get("weather_arb", {}).get("enabled", False)
         self.dry_run = cfg.get("weather_arb", {}).get("dry_run", True)
-        self.bankroll = 39.0 # Start with assumption from explicit goal
+        allocs = cfg.get("bankroll", {}).get("allocations", {})
+        self.bankroll = allocs.get("weather_arb", 15.0)
 
     async def scan_and_deploy(self, poly_markets: list) -> list:
         if not self.enabled:

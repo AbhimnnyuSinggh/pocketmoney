@@ -13,8 +13,12 @@ execution:
   post_only: true
 # ---------- Bankroll & Risk ----------
 bankroll:
-  total_usdc: 1000.0
-  max_per_opportunity: 50.0
+  total_usdc: 39.0           # Global maximum to deploy
+  allocations:               # Dedicated sub-budgets to prevent double-spending
+    bond_spreader: 15.0      # Sub-budget for Bond Spread Automator
+    weather_arb: 15.0        # Sub-budget for Weather Arbitrage
+    poly_lp: 9.0             # Sub-budget for Market Making LP
+  max_per_opportunity: 10.0
   max_open_positions: 10
   min_profit_pct: 0.1        # Lowered: catch more signals across all modules
   fee_buffer_cents: 0.5

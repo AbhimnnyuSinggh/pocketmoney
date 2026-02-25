@@ -55,11 +55,15 @@ if HAS_FERNET and _ENC_KEY:
         logger.warning("WALLET_ENCRYPTION_KEY invalid — generating new key")
         _ENC_KEY = Fernet.generate_key().decode()
         _fernet = Fernet(_ENC_KEY.encode())
-        logger.warning(f"⚠️ Save this encryption key: {_ENC_KEY}")
+        with open(".wallet_encryption_key", "w") as f:
+            f.write(_ENC_KEY)
+        logger.warning(f"⚠️ Generated new encryption key — saved to .wallet_encryption_key")
 elif HAS_FERNET and not _ENC_KEY:
     _ENC_KEY = Fernet.generate_key().decode()
     _fernet = Fernet(_ENC_KEY.encode())
-    logger.warning(f"No WALLET_ENCRYPTION_KEY set — auto-generated: {_ENC_KEY[:20]}...")
+    with open(".wallet_encryption_key", "w") as f:
+        f.write(_ENC_KEY)
+    logger.warning(f"No WALLET_ENCRYPTION_KEY set — auto-generated and saved to .wallet_encryption_key")
 
 import base64
 

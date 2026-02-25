@@ -294,10 +294,10 @@ class TelegramBotHandler:
         self.dedup_cooldown = cfg.get("interactive", {}).get(
             "dedup_cooldown_seconds", 1800  # 30 min default
         )
-        # Ghost-alert cooldown: don't spam "you missed" every cycle
-        self._ghost_last_sent: dict[str, float] = {}
-        self._ghost_cooldown = 300  # max one ghost alert every 5 min
         # Pending external payments awaiting admin approval
+        # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ..., "dur": ...}}
+        self._pending_payments: dict[str, dict] = {}
+        self.global_kill = False
         # {chat_id: {"tier": ..., "method": ..., "ts": ..., "ref": ..., "dur": ...}}
         self._pending_payments: dict[str, dict] = {}
         
@@ -1171,6 +1171,8 @@ class TelegramBotHandler:
                 self._cmd_unban(chat_id, text)
             elif text == "/banned":
                 self._cmd_banned_list(chat_id)
+            elif text == "/kill":
+                self._cmd_kill(chat_id)
             elif text == "/admin":
                 self._cmd_admin(chat_id)
             elif text == "/users":
@@ -1491,6 +1493,13 @@ class TelegramBotHandler:
                     f"Tier: 🆓 Free\n\n"
                     f"👥 Total: <b>{total}</b> (+{today_joins} today)"
                 )
+
+    def _cmd_kill(self, chat_id: str):
+        if not self._is_admin(chat_id): return
+        self.global_kill = not self.global_kill
+        status = "🔴 ACTIVE (Trading Suspended)" if self.global_kill else "🟢 INACTIVE (Trading Resumed)"
+        self._send(chat_id, f"🚨 **GLOBAL KILL SWITCH** 🚨\n{status}")
+
     def _cmd_menu(self, chat_id: str):
         current_sig = self._get_signal(chat_id)
         current_cat = self._get_category(chat_id)
