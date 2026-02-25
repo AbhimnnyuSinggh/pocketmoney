@@ -28,7 +28,7 @@ async def fetch_open_meteo_forecast(city: str) -> dict:
         "latitude": lat,
         "longitude": lon,
         "daily": "temperature_2m_max",
-        "models": "gfs_seamless,ecmwf_seamless,icon_seamless",
+        "models": "gfs_seamless,ecmwf_ifs04,icon_seamless",
         "temperature_unit": "fahrenheit",
         "timezone": "auto"
     }
