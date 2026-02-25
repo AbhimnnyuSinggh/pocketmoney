@@ -124,8 +124,15 @@ class LPOrderManager:
         self.state_file = lp_cfg.get("state_file", "lp_state.json")
 
         # Risk caps
+        total_usdc = cfg.get("bankroll", {}).get("total_usdc", 100.0)
         allocs = cfg.get("bankroll", {}).get("allocations", {})
-        self.max_lp_capital = allocs.get("poly_lp", lp_cfg.get("max_lp_capital", 300.0))
+        
+        active = cfg.get("execution", {}).get("active_autotrader", "none")
+        if active == "lp":
+            self.max_lp_capital = total_usdc
+            logger.info(f"🏭 LP Engine is ACTIVE module -> Routing 100% capital (${self.max_lp_capital})")
+        else:
+            self.max_lp_capital = allocs.get("poly_lp", lp_cfg.get("max_lp_capital", 300.0))
         self.max_position_one_side = lp_cfg.get("max_position_one_side", 150.0)
         self.max_loss_per_session = lp_cfg.get("max_loss_per_session", 20.0)
         self.order_size = lp_cfg.get("order_size", 50.0)
@@ -171,6 +178,11 @@ class LPOrderManager:
         # Kill switch
         if self.state.stop_flag:
             return False, "Stop flag is set — /lp stop was triggered"
+            
+        # Autotrader switch
+        active_mod = self.cfg.get("execution", {}).get("active_autotrader", "none")
+        if active_mod != "lp":
+            return False, f"LP disabled (active autotrader is {active_mod.upper()})"
 
         # Capital cap
         pos = LPPosition.from_dict(self.state.position) if self.state.position else LPPosition()

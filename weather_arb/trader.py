@@ -28,8 +28,16 @@ class WeatherArbitrage:
             
         self.enabled = cfg.get("weather_arb", {}).get("enabled", False)
         self.dry_run = cfg.get("weather_arb", {}).get("dry_run", True)
+        
+        # Smart Capital Routing: 100% bankroll if active autotrader, else fractional
+        total_usdc = cfg.get("bankroll", {}).get("total_usdc", 100.0)
         allocs = cfg.get("bankroll", {}).get("allocations", {})
-        self.bankroll = allocs.get("weather_arb", 15.0)
+        active = cfg.get("execution", {}).get("active_autotrader", "none")
+        if active == "weather":
+            self.bankroll = total_usdc
+            logger.info(f"🌤 Weather Arb is the ACTIVE module -> Routing 100% capital (${self.bankroll})")
+        else:
+            self.bankroll = allocs.get("weather_arb", 15.0)
 
     async def scan_and_deploy(self, poly_markets: list) -> list:
         if not self.enabled:

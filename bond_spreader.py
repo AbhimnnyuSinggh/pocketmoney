@@ -181,8 +181,16 @@ class BondSpreader:
         self.base_amount = bs_cfg.get("base_amount", 1.00)
         
         # Pull allocated bankroll from central config to prevent double-spending
+        total_usdc = cfg.get("bankroll", {}).get("total_usdc", 100.0)
         allocs = cfg.get("bankroll", {}).get("allocations", {})
-        self.max_deployed = allocs.get("bond_spreader", bs_cfg.get("max_total_deployed", 100.0))
+        
+        active = cfg.get("execution", {}).get("active_autotrader", "none")
+        if active == "bonds":
+            self.max_deployed = total_usdc
+            import logging
+            logging.getLogger("arb_bot.bonds").info(f"🏦 Bond Spreader is ACTIVE module -> Routing 100% capital (${self.max_deployed})")
+        else:
+            self.max_deployed = allocs.get("bond_spreader", bs_cfg.get("max_total_deployed", 100.0))
         
         self.max_category_pct = bs_cfg.get("max_per_category_pct", 20)
         self.min_price = bs_cfg.get("min_price", 0.93)
@@ -304,6 +312,11 @@ class BondSpreader:
             remaining = self.session.current_pool - self.session.total_deployed
             bucket_budget = self._get_bucket_budget(c["bucket"])
             if c["amount"] > remaining or c["amount"] > bucket_budget:
+                continue
+
+            active_mod = self.cfg.get("execution", {}).get("active_autotrader", "none")
+            if active_mod != "bonds":
+                # Market was scanned and processed, but execution is blocked
                 continue
 
             bet = self._place_bet(

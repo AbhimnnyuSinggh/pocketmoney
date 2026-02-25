@@ -1247,6 +1247,8 @@ class TelegramBotHandler:
                 self._cmd_bonds(chat_id, text)
             elif text.startswith("/wallet"):
                 self._cmd_wallet(chat_id, text)
+            elif text == "/autotrade":
+                self._cmd_autotrade(chat_id)
             else:
                 command = text.split()[0] if text else ""
                 if command in getattr(self, "routes", {}):
@@ -1334,6 +1336,13 @@ class TelegramBotHandler:
         elif data == "cmd:help":
             self._cmd_help(chat_id)
             self._answer_callback(cb_id)
+        elif data == "cmd:autotrade":
+            self._cmd_autotrade(chat_id)
+            self._answer_callback(cb_id)
+        elif data.startswith("autotrade:"):
+            mod = data.split(":")[1]
+            self._handle_autotrade(chat_id, mod)
+            self._answer_callback(cb_id, f"✅ Selected: {mod}")
         elif data == "cmd:upgrade":
             self._cmd_upgrade(chat_id)
             self._answer_callback(cb_id)
@@ -1591,6 +1600,7 @@ class TelegramBotHandler:
             f"/results  — Bond performance tracker\n"
             f"/bonds    — Bond spread automator\n"
             f"/wallet   — Wallet & trading setup\n"
+            f"/autotrade— Select active auto-trader\n"
             f"/upgrade  — View plans & subscribe\n"
             f"/reset    — Reset preferences\n"
             f"/help     — This message\n"
@@ -1788,7 +1798,6 @@ class TelegramBotHandler:
             f"🕐 <b>DURATION FILTER</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"\n"
-            f"Signal: <b>{s['emoji']} {s['label']}</b>\n"
             f"Current Duration: <b>{d['emoji']} {d['label']}</b>\n"
             f"\n"
             f"Filter signals by when the market resolves.\n"
@@ -1798,6 +1807,66 @@ class TelegramBotHandler:
             f"👇 <b>Tap to select duration:</b>"
         )
         self._send(chat_id, msg, self._duration_keyboard(current_dur))
+
+    def _cmd_autotrade(self, chat_id: str):
+        if not self._is_admin(chat_id):
+            self._send(chat_id, "❌ This command is restricted to admins.")
+            return
+            
+        active_mod = self.cfg.get("execution", {}).get("active_autotrader", "none")
+        
+        msg = (
+            f"⚙️ <b>AUTO-TRADER SELECTION</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"\n"
+            f"Active: <b>{active_mod.upper()}</b>\n"
+            f"\n"
+            f"The selected bot will receive 100% of your trading capital to deploy automatically.\n"
+            f"All other bots will stop trading, but signals will still send normally.\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👇 <b>Tap to switch active bot:</b>"
+        )
+        self._send(chat_id, msg, self._autotrade_keyboard())
+
+    def _autotrade_keyboard(self) -> dict:
+        current = self.cfg.get("execution", {}).get("active_autotrader", "none")
+        buttons = []
+        AVAILABLE = {
+            "weather": {"label": "Weather Bot", "emoji": "🌤"},
+            "bonds": {"label": "Bond Spreader", "emoji": "🏦"},
+            "lp": {"label": "LP Engine", "emoji": "🏭"},
+            "none": {"label": "None (Signals Only)", "emoji": "🛑"}
+        }
+        
+        for k, v in AVAILABLE.items():
+            mark = "✅ " if k == current else ""
+            buttons.append([{"text": f"{mark}{v['emoji']} {v['label']}", "callback_data": f"autotrade:{k}"}])
+            
+        return {"inline_keyboard": buttons}
+
+    def _handle_autotrade(self, chat_id: str, mod_key: str):
+        if not self._is_admin(chat_id): return
+        
+        # 1. Update memory
+        exec_cfg = self.cfg.setdefault("execution", {})
+        exec_cfg["active_autotrader"] = mod_key
+        
+        # 2. Update config.yaml to persist
+        try:
+            import yaml
+            with open("config.yaml", "r") as f:
+                full_cfg = yaml.safe_load(f)
+            if "execution" not in full_cfg:
+                full_cfg["execution"] = {}
+            full_cfg["execution"]["active_autotrader"] = mod_key
+            with open("config.yaml", "w") as f:
+                yaml.dump(full_cfg, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            logger.error(f"Failed to save active_autotrader: {e}")
+            
+        self._send(chat_id, f"✅ <b>Active Auto-Trader changed to:</b> {mod_key.upper()}\n100% of capital will be routed here.", parse_mode="HTML")
+        self._cmd_autotrade(chat_id)
 
     def _select_duration(self, chat_id: str, dur_key: str):
         """User selected a duration. Confirm + replay filtered history."""
