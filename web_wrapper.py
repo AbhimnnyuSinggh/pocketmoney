@@ -101,6 +101,57 @@ def run_bot():
             
     # Start interactive bot handler
     bot_handler = TelegramBotHandler(cfg)
+    
+    # Initialize Execution Engine for trading
+    try:
+        from execution_engine import ExecutionEngine
+        bot_handler.execution_engine = ExecutionEngine(cfg)
+        log.info("Execution Engine initialized")
+    except ImportError:
+        bot_handler.execution_engine = None
+        log.warning("ExecutionEngine not imported! ImportError occurred silently.")
+        if cfg["telegram"]["enabled"]:
+            from telegram_alerts_v2 import send_telegram_message
+            send_telegram_message(f"🚨 <b>ExecutionEngine not imported!</b> ImportError occurred silently.", cfg)
+    except Exception as e:
+        bot_handler.execution_engine = None
+        import traceback
+        err = traceback.format_exc()
+        log.warning(f"Execution Engine init error: {err}")
+        if cfg["telegram"]["enabled"]:
+            from telegram_alerts_v2 import send_telegram_message
+            send_telegram_message(f"🚨 <b>Execution Engine Init Failed</b>\n<pre>{str(err)[:500]}</pre>", cfg)
+
+    # Initialize Bond Spreader
+    if cfg.get("bond_spreader", {}).get("enabled", False):
+        try:
+            from bond_spreader import BondSpreader
+            bot_handler._bond_spreader = BondSpreader(cfg, bot_handler.execution_engine)
+            log.info("Bond Spreader initialized")
+        except Exception as e:
+            bot_handler._bond_spreader = None
+            log.error(f"Bond Spreader init error: {e}")
+
+    # Initialize Weather Arbitrage
+    if cfg.get("weather_arb", {}).get("enabled", False):
+        try:
+            from weather_arb.trader import WeatherArbitrage
+            bot_handler._weather_arb = WeatherArbitrage(cfg, bot_handler.execution_engine, getattr(bot_handler, 'pnl_tracker', None))
+            log.info("Weather Arbitrage initialized")
+        except Exception as e:
+            bot_handler._weather_arb = None
+            log.error(f"Weather Arb init error: {e}")
+
+    # Start Speed Listener (10s fast polling)
+    if cfg.get("speed_listener", {}).get("enabled", True):
+        try:
+            from speed_listener import SpeedListener
+            speed = SpeedListener(cfg)
+            speed.start()
+            bot_handler.speed_listener = speed
+        except Exception as e:
+            log.warning(f"Speed Listener init error: {e}")
+
     bot_handler.start_polling()
     log.info("Interactive signal selector active")
     
