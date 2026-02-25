@@ -400,9 +400,17 @@ def main():
             logger.info("Execution Engine initialized")
         except Exception as e:
             bot_handler.execution_engine = None
-            logger.warning(f"Execution Engine init error: {e}")
+            import traceback
+            err = traceback.format_exc()
+            logger.warning(f"Execution Engine init error: {err}")
+            if cfg["telegram"]["enabled"]:
+                from telegram_alerts_v2 import send_telegram_message
+                send_telegram_message(f"🚨 <b>Execution Engine Init Failed</b>\n<pre>{str(err)[:500]}</pre>", cfg)
     else:
         bot_handler.execution_engine = None
+        if cfg["telegram"]["enabled"]:
+            from telegram_alerts_v2 import send_telegram_message
+            send_telegram_message(f"🚨 <b>ExecutionEngine not imported!</b> ImportError occurred silently.", cfg)
 
     # Initialize Bond Spreader
     if BondSpreader and cfg.get("bond_spreader", {}).get("enabled", False):
