@@ -27,7 +27,10 @@ class WeatherArbitrage:
             self.mode = TradingMode.SAFE
             
         self.enabled = cfg.get("weather_arb", {}).get("enabled", False)
-        self.dry_run = cfg.get("weather_arb", {}).get("dry_run", True)
+        
+        # Inherit execution mode globally from /wallet live
+        global_mode = cfg.get("execution", {}).get("mode", "dry_run")
+        self.dry_run = (global_mode == "dry_run")
         
         # Smart Capital Routing: 100% bankroll if active autotrader, else fractional
         total_usdc = cfg.get("bankroll", {}).get("total_usdc", 100.0)

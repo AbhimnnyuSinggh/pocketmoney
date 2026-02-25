@@ -1249,6 +1249,8 @@ class TelegramBotHandler:
                 self._cmd_wallet(chat_id, text)
             elif text == "/autotrade":
                 self._cmd_autotrade(chat_id)
+            elif text == "/active_orders":
+                self._cmd_active_orders(chat_id)
             else:
                 command = text.split()[0] if text else ""
                 if command in getattr(self, "routes", {}):
@@ -1875,12 +1877,12 @@ class TelegramBotHandler:
                 f"You have allocated 100% of your capital to the Weather Bot.\n\n"
                 f"<b>Step 1: Connect Wallet</b> 💳\n"
                 f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
-                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"<b>Step 2: Arm the Bot</b> ⚙️\n"
                 f"Use `/wallet live` to allow real USDC spending.\n\n"
-                f"<b>Step 3: Arm the Weather Module</b> ☔\n"
-                f"Use `/weather_dryrun off` to start deploying capital to forecasts.\n\n"
+                f"<b>Step 3: How to Stop</b> 🛑\n"
+                f"Use `/wallet dryrun` at any time to instantly halt trading.\n\n"
                 f"<b>Step 4: Monitoring</b> 📊\n"
-                f"Use `/perf` to see the win-rate and profit chart of this bot!"
+                f"Use `/active_orders` to see live trades, or `/perf` for global stats."
             )
             self._send(chat_id, tutorial)
         elif mod_key == "bonds":
@@ -1890,12 +1892,12 @@ class TelegramBotHandler:
                 f"You have allocated 100% of your capital to the Bond Spreader.\n\n"
                 f"<b>Step 1: Connect Wallet</b> 💳\n"
                 f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
-                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"<b>Step 2: Arm the Bot</b> ⚙️\n"
                 f"Use `/wallet live` to allow real USDC spending.\n\n"
-                f"<b>Step 3: Arm the Bond Module</b> 🛡️\n"
-                f"Use `/bonds live` to start buying $0.93+ guaranteed-yield shares.\n\n"
+                f"<b>Step 3: How to Stop</b> 🛑\n"
+                f"Use `/wallet dryrun` at any time to instantly halt trading.\n\n"
                 f"<b>Step 4: Monitoring</b> 📊\n"
-                f"Use `/bonds` to see your active bond portfolio and total yield."
+                f"Use `/active_orders` to see live trades, or `/bonds` for the dashboard."
             )
             self._send(chat_id, tutorial)
         elif mod_key == "lp":
@@ -1905,16 +1907,52 @@ class TelegramBotHandler:
                 f"You have allocated 100% of your capital to the LP Market Maker.\n\n"
                 f"<b>Step 1: Connect Wallet</b> 💳\n"
                 f"Use `/wallet set YOUR_PRIVATE_KEY YOUR_ADDRESS`\n\n"
-                f"<b>Step 2: Arm the Global Engine</b> ⚙️\n"
+                f"<b>Step 2: Arm the Bot</b> ⚙️\n"
                 f"Use `/wallet live` to allow real USDC spending.\n\n"
-                f"<b>Step 3: Arm the LP Module</b> 💰\n"
-                f"Use `/lp live` to allow the bot to place two-sided maker limit orders.\n\n"
+                f"<b>Step 3: How to Stop</b> 🛑\n"
+                f"Use `/wallet dryrun` at any time to instantly halt trading.\n\n"
                 f"<b>Step 4: Monitoring</b> 📊\n"
-                f"Use `/lp status` to see your maker volume, spread width, and LP PnL."
+                f"Use `/active_orders` to see live trades, or `/lp status` for maker stats."
             )
             self._send(chat_id, tutorial)
             
         self._cmd_autotrade(chat_id)
+
+    def _cmd_active_orders(self, chat_id: str):
+        if not self._is_admin(chat_id): return
+        
+        active_mod = self.cfg.get("execution", {}).get("active_autotrader", "none")
+        
+        msg = f"📊 <b>ACTIVE TRADES ({active_mod.upper()})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        if active_mod == "bonds":
+            bs = getattr(self, "_bond_spreader", None)
+            if not bs or not bs.session.active_bets:
+                msg += "No active bond orders."
+            else:
+                for b in bs.session.active_bets:
+                    msg += f"🏦 {b.get('market_title', '?')[:40]}\n   {b.get('side', '')} @ {b.get('price', 0):.2f} | Size: ${b.get('amount', 0):.2f}\n\n"
+                    
+        elif active_mod == "weather":
+            wa = getattr(self, "_weather_arb", None)
+            # Weather arb currently logs to SQLite, we can pull recent open positions or state 
+            msg += "Weather trades are managed dynamically in batches.\nUse `/perf` to view daily stats."
+            
+        elif active_mod == "lp":
+            lp = self._get_lp_engine()
+            if not lp or not lp.order_mgr.state.orders:
+                msg += "No active LP orders."
+            else:
+                open_orders = [o for o in lp.order_mgr.state.orders if o.get('status') == "OPEN"]
+                if not open_orders:
+                    msg += "No open maker orders."
+                for o in open_orders:
+                    msg += f"🏭 Token: {o.get('token_id', '?')[:8]}...\n   {o.get('side', '')} @ {o.get('price', 0):.2f} | Shares: {o.get('size', 0):.2f}\n\n"
+                    
+        else:
+            msg += "No auto-trader active. (Signals Only mode)"
+            
+        self._send(chat_id, msg, parse_mode="HTML")
 
     def _select_duration(self, chat_id: str, dur_key: str):
         """User selected a duration. Confirm + replay filtered history."""

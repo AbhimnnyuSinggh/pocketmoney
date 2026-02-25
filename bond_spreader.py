@@ -177,7 +177,10 @@ class BondSpreader:
         bs_cfg = cfg.get("bond_spreader", {})
 
         self.enabled = bs_cfg.get("enabled", False)
-        self.mode = bs_cfg.get("mode", "dry_run")
+        
+        # Inherit execution mode globally from /wallet live
+        global_mode = cfg.get("execution", {}).get("mode", "dry_run")
+        self.mode = global_mode
         self.base_amount = bs_cfg.get("base_amount", 1.00)
         
         # Pull allocated bankroll from central config to prevent double-spending

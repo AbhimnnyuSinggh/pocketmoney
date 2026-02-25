@@ -120,7 +120,10 @@ class LPOrderManager:
         self.cfg = cfg
         self.client = clob_client  # None = dry_run
         lp_cfg = cfg.get("lp_farming", {})
-        self.mode = lp_cfg.get("lp_mode", "dry_run")
+        
+        # Inherit execution mode globally from /wallet live
+        global_mode = cfg.get("execution", {}).get("mode", "dry_run")
+        self.mode = global_mode
         self.state_file = lp_cfg.get("state_file", "lp_state.json")
 
         # Risk caps
