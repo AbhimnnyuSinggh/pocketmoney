@@ -295,13 +295,16 @@ class WalletManager:
         if not pk or not w:
             return None
         try:
-            return ClobClient(
+            client = ClobClient(
                 host="https://clob.polymarket.com",
                 key=pk,
                 chain_id=137,
                 funder=w.get("funder_address", ""),
                 signature_type=w.get("signature_type", 1),
             )
+            # CRITICAL: Derive and set API credentials for authentication
+            client.set_api_creds(client.derive_api_key())
+            return client
         except Exception as e:
             logger.error(f"CLOB client creation failed: {e}")
             return None
@@ -371,7 +374,9 @@ class ExecutionEngine:
                     funder=self._admin_funder,
                     signature_type=1,
                 )
-                logger.info("Admin CLOB client initialized")
+                # CRITICAL: Derive and set API credentials for authentication
+                self._admin_client.set_api_creds(self._admin_client.derive_api_key())
+                logger.info("Admin CLOB client initialized + API creds derived")
             except Exception as e:
                 logger.error(f"Admin CLOB init failed: {e}")
 
@@ -658,3 +663,73 @@ class ExecutionEngine:
                     json.dump(self._history[-200:], f, indent=2, default=str)
             except IOError as e:
                 logger.error(f"Trade history save failed: {e}")
+
+    def verify_wallet(self, chat_id: str) -> dict:
+        """
+        Verify wallet connectivity and return status.
+        Returns dict with: valid, balance, error, address
+        """
+        result = {"valid": False, "balance": None, "error": "", "address": ""}
+
+        # 1. Basic format validation
+        pk = self.wallet_manager.get_decrypted_key(chat_id)
+        w = self.wallet_manager._wallets.get(str(chat_id))
+        if not pk or not w:
+            result["error"] = "No wallet stored"
+            return result
+
+        funder = w.get("funder_address", "")
+
+        # Validate key format (64 hex chars, or 66 with 0x prefix)
+        clean_pk = pk.strip()
+        if clean_pk.startswith("0x"):
+            clean_pk = clean_pk[2:]
+        if len(clean_pk) != 64 or not all(c in '0123456789abcdefABCDEF' for c in clean_pk):
+            result["error"] = "Invalid private key format (need 64 hex characters)"
+            return result
+
+        # Validate address format (42 chars, 0x prefix)
+        if not funder.startswith("0x") or len(funder) != 42:
+            result["error"] = "Invalid funder address format (need 0x + 40 hex chars)"
+            return result
+
+        result["address"] = f"{funder[:6]}...{funder[-4:]}"
+
+        # 2. Try to create a ClobClient and authenticate
+        if not HAS_CLOB:
+            result["error"] = "py-clob-client not installed — cannot verify"
+            result["valid"] = True  # Key format is valid, just can't test CLOB
+            return result
+
+        try:
+            client = self.wallet_manager.create_clob_client(chat_id)
+            if not client:
+                result["error"] = "Failed to create CLOB client"
+                return result
+
+            # create_clob_client already calls derive_api_key()
+            # If we got here without exception, the key is valid
+            result["valid"] = True
+
+            # 3. Try to get balance (best-effort)
+            try:
+                USDC_CONTRACT = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+                padded_addr = "0" * 24 + funder[2:]
+                payload = {
+                    "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                    "params": [{"to": USDC_CONTRACT, "data": f"0x70a08231{padded_addr}"}, "latest"]
+                }
+                resp = requests.post("https://polygon-rpc.com", json=payload, timeout=5)
+                if resp.status_code == 200:
+                    hex_balance = resp.json().get("result", "0x0")
+                    raw_balance = int(hex_balance, 16)
+                    usdc_balance = raw_balance / 1e6  # USDC has 6 decimals
+                    result["balance"] = round(usdc_balance, 2)
+            except Exception:
+                pass  # Balance check is best-effort
+
+        except Exception as e:
+            result["error"] = f"Verification failed: {str(e)[:80]}"
+
+        return result
+

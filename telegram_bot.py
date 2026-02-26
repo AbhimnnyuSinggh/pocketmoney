@@ -4331,12 +4331,32 @@ class TelegramBotHandler:
                 chat_id, private_key, funder_address
             )
             if ok:
-                self._send(chat_id, (
-                    "✅ <b>Wallet connected!</b>\n"
-                    "🔐 Key encrypted and stored securely.\n"
-                    "Mode: 🟡 DRY RUN (use /wallet live to enable)\n\n"
-                    "⚠️ Your message with the key was deleted."
-                ), parse_mode="HTML")
+                # Verify the wallet actually works
+                self._send(chat_id, "🔄 Verifying wallet...", parse_mode="HTML")
+                verify = ee.verify_wallet(chat_id)
+
+                if verify["valid"]:
+                    balance_str = f"${verify['balance']:.2f} USDC" if verify['balance'] is not None else "Could not fetch"
+                    self._send(chat_id, (
+                        "✅ <b>Wallet Verified!</b>\n"
+                        "🔐 Key encrypted and stored securely.\n"
+                        f"📍 Address: <code>{verify['address']}</code>\n"
+                        f"💰 Balance: <b>{balance_str}</b>\n"
+                        "Mode: 🟡 DRY RUN (use /wallet live to enable)\n\n"
+                        "⚠️ Your message with the key was deleted."
+                    ), parse_mode="HTML")
+                else:
+                    # Key stored but verification failed — warn user
+                    ee.wallet_manager.remove_wallet(chat_id)
+                    self._send(chat_id, (
+                        "❌ <b>Wallet verification failed!</b>\n"
+                        f"Reason: {verify['error']}\n\n"
+                        "The key was NOT saved. Please check:\n"
+                        "• Private key is 64 hex characters\n"
+                        "• Funder address starts with 0x\n"
+                        "• Key matches the address\n\n"
+                        "Try again: /wallet set KEY ADDRESS"
+                    ), parse_mode="HTML")
             else:
                 self._send(chat_id, "❌ Failed to store wallet. Try again.")
             return
@@ -4344,11 +4364,49 @@ class TelegramBotHandler:
         if subcmd == "live":
             if ee and ee.wallet_manager.has_wallet(chat_id):
                 ee.wallet_manager.set_mode(chat_id, "live")
+
+                # If admin, also update global execution mode
+                if self._is_admin(chat_id):
+                    self.cfg.setdefault("execution", {})["mode"] = "live"
+                    ee.global_mode = "live"
+
+                    # Update live modules in-memory
+                    wa = getattr(self, '_weather_arb', None)
+                    if wa:
+                        wa.dry_run = False
+
+                    bs = getattr(self, '_bond_spreader', None)
+                    if bs:
+                        bs.mode = "live"
+
+                    # Persist to config.yaml
+                    try:
+                        import yaml
+                        with open("config.yaml", "r") as f:
+                            full_cfg = yaml.safe_load(f)
+                        full_cfg.setdefault("execution", {})["mode"] = "live"
+                        with open("config.yaml", "w") as f:
+                            yaml.dump(full_cfg, f, default_flow_style=False, sort_keys=False)
+                    except Exception as e:
+                        logger.error(f"Failed to persist live mode: {e}")
+
                 self._send(chat_id, (
-                    "🟢 <b>LIVE MODE</b>\n"
+                    "🟢 <b>LIVE MODE ACTIVATED</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "⚠️ Real USDC orders will be placed!\n"
-                    "Check limits: /wallet status"
+                    "All active auto-traders switched to LIVE.\n\n"
+                    "🛑 /wallet dryrun to stop immediately\n"
+                    "📊 /wallet status to check limits"
                 ), parse_mode="HTML")
+
+                # Check if autotrader is set
+                active = self.cfg.get("execution", {}).get("active_autotrader", "none")
+                if active == "none":
+                    self._send(chat_id, (
+                        "⚠️ <b>No auto-trader selected!</b>\n"
+                        "You're in live mode but no bot is active.\n"
+                        "Use /autotrade to pick: Weather, Bonds, or LP"
+                    ), parse_mode="HTML")
             else:
                 self._send(chat_id, "❌ No wallet connected. Use /wallet set KEY ADDRESS")
             return
@@ -4356,7 +4414,34 @@ class TelegramBotHandler:
         if subcmd == "dryrun":
             if ee and ee.wallet_manager.has_wallet(chat_id):
                 ee.wallet_manager.set_mode(chat_id, "dry_run")
-                self._send(chat_id, "🔵 Switched to DRY RUN mode.")
+
+                if self._is_admin(chat_id):
+                    self.cfg.setdefault("execution", {})["mode"] = "dry_run"
+                    ee.global_mode = "dry_run"
+
+                    wa = getattr(self, '_weather_arb', None)
+                    if wa:
+                        wa.dry_run = True
+
+                    bs = getattr(self, '_bond_spreader', None)
+                    if bs:
+                        bs.mode = "dry_run"
+
+                    try:
+                        import yaml
+                        with open("config.yaml", "r") as f:
+                            full_cfg = yaml.safe_load(f)
+                        full_cfg.setdefault("execution", {})["mode"] = "dry_run"
+                        with open("config.yaml", "w") as f:
+                            yaml.dump(full_cfg, f, default_flow_style=False, sort_keys=False)
+                    except Exception:
+                        pass
+
+                self._send(chat_id, (
+                    "🔵 <b>DRY RUN MODE</b>\n"
+                    "All trading halted. No real orders will be placed.\n"
+                    "Use /wallet live to resume."
+                ), parse_mode="HTML")
             return
 
         if subcmd == "limit" and len(parts) >= 3:
@@ -4384,6 +4469,17 @@ class TelegramBotHandler:
                 self._send(chat_id, "✅ Wallet removed. All keys deleted.")
             else:
                 self._send(chat_id, "❌ No wallet to remove.")
+            return
+
+        if subcmd == "balance":
+            if ee:
+                verify = ee.verify_wallet(chat_id)
+                if verify["balance"] is not None:
+                    self._send(chat_id, f"💰 <b>Balance:</b> ${verify['balance']:.2f} USDC", parse_mode="HTML")
+                elif verify["error"]:
+                    self._send(chat_id, f"❌ {verify['error']}")
+                else:
+                    self._send(chat_id, "❌ Could not fetch balance")
             return
 
         self._send(chat_id, (

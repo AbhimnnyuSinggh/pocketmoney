@@ -46,8 +46,14 @@ async def get_dashboard(period="daily") -> tuple[str, str | None]:
                 for r in rows:
                     current_eq += float(r[1])
                     equity_curve.append(current_eq)
-                    # Convert float timestamp to short date string (e.g. "Feb 24")
-                    dt = datetime.fromtimestamp(r[0])
+                    # Convert ISO or float timestamp to short date string (e.g. "Feb 24")
+                    try:
+                        dt = datetime.fromisoformat(str(r[0]).replace('Z', '+00:00'))
+                    except (ValueError, AttributeError):
+                        try:
+                            dt = datetime.fromtimestamp(float(r[0]))
+                        except (ValueError, TypeError):
+                            continue
                     dates.append(dt.strftime("%m-%d"))
                     
     except Exception as e:

@@ -301,17 +301,24 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
             wa = getattr(bot_handler, '_weather_arb', None)
             if wa:
                 import threading
-                def _weather_thread():
-                    import asyncio
-                    try:
-                        weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
-                        if weather_opps:
-                            bot_handler.distribute_signals(weather_opps, cfg)
-                        asyncio.run(wa.update_dashboard())
-                    except Exception as e:
-                        logger.error(f"Weather arb thread error: {e}")
-                
-                threading.Thread(target=_weather_thread, daemon=True, name="weather-arb").start()
+                if not hasattr(run_cycle, '_weather_lock'):
+                    run_cycle._weather_lock = threading.Lock()
+
+                if run_cycle._weather_lock.locked():
+                    logger.warning("Weather scan still running from previous cycle, skipping")
+                else:
+                    def _weather_thread():
+                        with run_cycle._weather_lock:
+                            import asyncio
+                            try:
+                                weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
+                                if weather_opps:
+                                    bot_handler.distribute_signals(weather_opps, cfg)
+                                asyncio.run(wa.update_dashboard())
+                            except Exception as e:
+                                logger.error(f"Weather arb thread error: {e}")
+
+                    threading.Thread(target=_weather_thread, daemon=True, name="weather-arb").start()
         except Exception as e:
             logger.error(f"Weather arb init error: {e}", exc_info=True)
 
@@ -333,6 +340,40 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
         bot_handler.distribute_signals(opportunities, cfg)
     else:
         send_opportunities_batch(opportunities, cfg)
+
+    # === Cycle Diagnostic (every 10 cycles = ~10 min) ===
+    if bot_handler and cycle % 10 == 0:
+        active_mod = cfg.get("execution", {}).get("active_autotrader", "none")
+        exec_mode = cfg.get("execution", {}).get("mode", "dry_run")
+
+        diag_parts = [f"\ud83d\udd04 <b>Cycle {cycle} Diagnostic</b>"]
+        diag_parts.append(f"Mode: <code>{exec_mode}</code> | AutoTrader: <code>{active_mod}</code>")
+        diag_parts.append(f"Markets scanned: {len(poly_markets)}")
+        diag_parts.append(f"Opportunities found: {len(opportunities)}")
+
+        # Bond spreader status
+        bs = getattr(bot_handler, '_bond_spreader', None)
+        if bs and bs.enabled:
+            active_bets = len([b for b in bs.session.active_bets if b.get("status") == "active"])
+            pool = bs.session.current_pool
+            deployed = bs.session.total_deployed
+            diag_parts.append(f"\ud83c\udfe6 Bonds: {active_bets} active, ${deployed:.2f} deployed, ${pool:.2f} pool")
+            if active_mod != "bonds":
+                diag_parts.append("  \u26a0\ufe0f AutoTrader not set to 'bonds' — trades blocked")
+
+        # Weather status
+        wa = getattr(bot_handler, '_weather_arb', None)
+        if wa and wa.enabled:
+            diag_parts.append(f"\ud83c\udf24 Weather: dry_run={wa.dry_run}")
+            if wa.dry_run:
+                diag_parts.append("  \u26a0\ufe0f Weather in dry_run — use /wallet live")
+
+        if exec_mode == "dry_run":
+            diag_parts.append("\n\u26a0\ufe0f <b>Global mode is DRY RUN — no real trades possible</b>")
+            diag_parts.append("Use /wallet live to enable trading")
+
+        send_telegram_message("\n".join(diag_parts), cfg)
+
     return opportunities
 def main():
     parser = argparse.ArgumentParser(description="Multi-Platform Prediction Market Arb Bot")

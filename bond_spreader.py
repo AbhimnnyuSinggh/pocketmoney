@@ -616,14 +616,15 @@ class BondSpreader:
             conviction_score=conviction,
         )
 
-        # Execute based on mode
-        if self.mode == "dry_run":
+        # Execute based on mode (read dynamically from config for hot-switch)
+        current_mode = self.cfg.get("execution", {}).get("mode", "dry_run")
+        if current_mode == "dry_run":
             bet.order_id = f"DRY-{bet.bet_id}"
             logger.info(
                 f"[DRY] Bond {tier}: {side} {bet.market_title[:40]} "
                 f"@ {price:.2f} ${amount:.2f} ({time_bucket})"
             )
-        elif self.mode == "live" and self.engine:
+        elif current_mode == "live" and self.engine:
             trade = self.engine.execute_trade_auto(
                 market.get("slug", ""), side, "BUY", amount, self.session.user_id
             )

@@ -42,8 +42,9 @@ def calculate_position(market_price: float, model_prob: float, mode: TradingMode
     
     bet_size = bankroll * final_fraction
     
-    # Only bet if it's over $1.00 micro-bet threshold to avoid dusting
-    if bet_size < 1.00:
+    # Dynamic minimum: $0.25 for small bankrolls, $1.00 for $200+
+    min_bet = max(0.25, bankroll * 0.005)  # 0.5% of bankroll, floor $0.25
+    if bet_size < min_bet:
         return None
         
     return {

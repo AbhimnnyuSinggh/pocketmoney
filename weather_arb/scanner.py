@@ -19,7 +19,12 @@ def get_active_weather_markets(all_poly_markets: list) -> list:
             continue
             
         title = m.get("title", "").lower()
-        is_daily_temp = "highest temperature" in title and "°f" in title.lower()
+        is_daily_temp = any(kw in title for kw in [
+            "highest temperature",
+            "high temperature",
+            "daily high",
+            "temperature high",
+        ])
         is_climate = "hottest year" in title or "temperature anomaly" in title
         
         if is_daily_temp or is_climate:
@@ -37,7 +42,7 @@ def get_active_weather_markets(all_poly_markets: list) -> list:
             
             # Identify City Target
             city_target = "Unknown"
-            if "new york" in title or "nyc" in title or "laguardia" in title:
+            if any(x in title for x in ["new york", "nyc", "laguardia", "manhattan"]):
                 city_target = "NYC"
             elif "chicago" in title:
                 city_target = "Chicago"
@@ -47,6 +52,10 @@ def get_active_weather_markets(all_poly_markets: list) -> list:
                 city_target = "London"
             elif "miami" in title:
                 city_target = "Miami"
+            elif "los angeles" in title or "la " in title:
+                city_target = "LA"
+            elif "houston" in title:
+                city_target = "Houston"
                 
             m["weather_type"] = "climate" if is_climate else "daily_high"
             m["city"] = city_target

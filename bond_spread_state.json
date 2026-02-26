@@ -1,0 +1,45 @@
+{
+  "session_id": "c968bdb020",
+  "user_id": "",
+  "started_at": 1771740934.7138739,
+  "mode": "dry_run",
+  "active_bets": [],
+  "resolved_bets": [],
+  "initial_capital": 100.0,
+  "current_pool": 100.0,
+  "total_deployed": 0.0,
+  "total_profits": 0.0,
+  "total_losses": 0.0,
+  "reinvest_rate": 0.8,
+  "withdrawn": 0.0,
+  "tier_stats": {
+    "A": {
+      "wins": 0,
+      "losses": 0,
+      "early_exits": 0,
+      "cut_losses": 0,
+      "total_pnl": 0.0
+    },
+    "B": {
+      "wins": 0,
+      "losses": 0,
+      "early_exits": 0,
+      "cut_losses": 0,
+      "total_pnl": 0.0
+    },
+    "C": {
+      "wins": 0,
+      "losses": 0,
+      "early_exits": 0,
+      "cut_losses": 0,
+      "total_pnl": 0.0
+    }
+  },
+  "category_deployed": {},
+  "category_stats": {},
+  "bucket_deployed": {
+    "daily": 0.0,
+    "3day": 0.0,
+    "7day": 0.0
+  }
+}

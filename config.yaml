@@ -11,6 +11,7 @@ execution:
   mode: "dry_run"            # "dry_run" or "live"
   order_type: "limit"
   post_only: true
+  active_autotrader: "none"  # "bonds", "weather", "lp", or "none"
 # ---------- Bankroll & Risk ----------
 bankroll:
   total_usdc: 39.0           # Global maximum to deploy
@@ -163,7 +164,7 @@ bond_spreader:
   enabled: true
   mode: "dry_run"
   base_amount: 1.00
-  max_total_deployed: 100.00
+  max_total_deployed: 15.00  # Matches allocation in bankroll.allocations.bond_spreader
   max_per_category_pct: 20
   min_liquidity: 5000
   min_volume: 1000

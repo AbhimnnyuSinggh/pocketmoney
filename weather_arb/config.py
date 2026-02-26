@@ -36,6 +36,8 @@ CITY_STATIONS = {
     "Atlanta": "KATL",      # Hartsfield
     "London": "EGLC",       # London City
     "Miami": "KMIA",        # Miami International
+    "LA": "KLAX",           # Los Angeles Intl
+    "Houston": "KIAH",      # Houston Intercontinental
 }
 
 # Database constants
