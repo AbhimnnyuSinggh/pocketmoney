@@ -7,6 +7,7 @@ telegram_alerts_v2.py — Sends alerts for all opportunity types:
 import logging
 import requests as http_requests
 from cross_platform_scanner import Opportunity
+from html import escape as html_escape
 try:
     from scoring import score_emoji
 except ImportError:
@@ -85,7 +86,7 @@ def format_opportunity(opp: Opportunity) -> str:
     msg = (
         f"{emoji} <b>{label}</b> {emoji}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{score_badge}📋 <b>{opp.title[:100]}</b>\n"
+        f"{score_badge}📋 <b>{html_escape(opp.title[:100])}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"\n"
         f"{opp.description}\n"

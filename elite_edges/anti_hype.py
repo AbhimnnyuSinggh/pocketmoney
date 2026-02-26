@@ -19,6 +19,7 @@ the bot to distribute. No execution is performed here.
 import time
 import logging
 from datetime import datetime
+from html import escape as html_escape
 
 logger = logging.getLogger("arb_bot.elite.anti_hype")
 
@@ -162,9 +163,9 @@ def find_anti_hype_opportunities(
                 f"Buy NO @ ${no_price:.4f} → pays $1.00\n"
                 f"\n"
                 f"💡 <b>Why overhyped:</b>\n"
-                f"  {reason}\n"
+                f"  {html_escape(reason)}\n"
                 f"\n"
-                f"Platform: {m['platform'].title()}\n"
+                f"Platform: {html_escape(m['platform'].title())}\n"
                 f"Volume 24h: ${m.get('volume_24h', 0):,.0f}\n"
                 f"Liquidity: ${m.get('liquidity', 0):,.0f}"
             ),
