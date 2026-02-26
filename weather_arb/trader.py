@@ -12,7 +12,6 @@ from datetime import datetime, date, timezone
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List
 
-from weather_arb.db import log_trade
 from weather_arb.scanner import get_active_weather_markets, group_weather_markets_by_event
 from weather_arb.data_fetcher import fetch_open_meteo_forecast, fetch_nws_observation
 from weather_arb.edge_calculator import calculate_position
@@ -457,11 +456,15 @@ class WeatherArbitrage:
                     })
 
                 # Log to SQLite
-                await log_trade(
-                    market_slug=slug, outcome_bin=pos["bin"],
-                    side="BUY", size=stake, price=pos.get("price", 0),
-                    mode=self.mode.name, edge=0,
-                )
+                try:
+                    from weather_arb.db import log_trade
+                    await log_trade(
+                        market_slug=slug, outcome_bin=pos["bin"],
+                        side="BUY", size=stake, price=pos.get("price", 0),
+                        mode=self.mode.name, edge=0,
+                    )
+                except Exception:
+                    pass  # DB logging is best-effort
 
             except Exception as e:
                 logger.error(f"Resolution check failed for {pos.get('slug')}: {e}")
@@ -502,12 +505,16 @@ class WeatherArbitrage:
             resp = client.post_order(order)
             logger.info(f"Weather Order Placed: {resp}")
 
-            await log_trade(
-                market_slug=slug, outcome_bin=bin_title,
-                side="BUY", size=pos['size_usdc'],
-                price=pos['price'], mode=pos.get('mode_used', self.mode.name),
-                edge=pos['edge']
-            )
+            try:
+                from weather_arb.db import log_trade
+                await log_trade(
+                    market_slug=slug, outcome_bin=bin_title,
+                    side="BUY", size=pos['size_usdc'],
+                    price=pos['price'], mode=pos.get('mode_used', self.mode.name),
+                    edge=pos['edge']
+                )
+            except Exception:
+                pass  # DB logging is best-effort
             return True
 
         except Exception as e:
