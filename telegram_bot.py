@@ -3389,6 +3389,7 @@ class TelegramBotHandler:
                 "resolution_intel": "🔍 Resolution",
                 "micro_arb": "⚡ Micro Arb",
                 "spread_arb": "📐 Spread Arb",
+                "weather_forecast": "🌤 Weather Forecast",
             }
             for t, count in type_counts.items():
                 lbl = type_labels.get(t, t)

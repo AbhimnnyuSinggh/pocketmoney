@@ -192,6 +192,18 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
         except Exception as e:
             logger.error(f"Longshot module error: {e}", exc_info=True)
 
+    # === Weather Forecast Signals (for Climate category users) ===
+    if cfg.get("weather_forecast", {}).get("enabled", True):
+        try:
+            from elite_edges.weather_forecast import scan_weather_forecasts
+            import asyncio
+            weather_signals = asyncio.run(scan_weather_forecasts(poly_markets, cfg))
+            if weather_signals:
+                opportunities.extend(weather_signals)
+                logger.info(f"🌤 Weather Forecast: {len(weather_signals)} signals")
+        except Exception as e:
+            logger.error(f"Weather forecast scanner error: {e}", exc_info=True)
+
     # Bond Compounder — enriches existing bonds (doesn't add new ones)
     if enrich_bond_opportunities:
         try:

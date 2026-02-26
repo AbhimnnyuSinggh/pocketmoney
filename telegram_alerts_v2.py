@@ -38,8 +38,74 @@ def send_telegram_message(text: str, cfg: dict) -> bool:
     except Exception as e:
         logger.error(f"Telegram send failed: {e}")
         return False
+def _format_weather_signal(opp) -> str:
+    """Rich format for weather forecast signals with source confluence data."""
+    wd = opp._weather_data
+
+    # Build source lines
+    source_lines = []
+    for src in wd["forecasts"]:
+        agrees = src.get("bin") == wd["best_bin"]
+        icon = "✅" if agrees else "❌"
+        src_name = html_escape(src['source'])
+        bin_label = src.get('bin', '?')
+        source_lines.append(
+            f"  {icon} {src_name:14s} {src['high_f']:.1f}°F → {bin_label}°F"
+        )
+
+    msg = (
+        f"🌤 <b>WEATHER FORECAST</b> 🌤\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📋 <b>{html_escape(wd['city'])} Daily High — {html_escape(str(wd['date']))}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Resolves: Weather Underground ({html_escape(wd.get('station', ''))})\n\n"
+        f"🔬 <b>Source Confluence ({wd['agree_count']}/{wd['total_sources']} agree):</b>\n"
+        + "\n".join(source_lines) + "\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>Best Range: {wd['best_bin']}°F</b>\n"
+        f"  Confluence: {wd['agree_count']}/{wd['total_sources']} ({wd['agree_pct']:.0f}%)\n"
+        f"  Market Price: {wd['market_price']*100:.0f}¢ (implied {wd['market_price']:.0%})\n"
+        f"  ⚡ Edge: +{wd['edge']:.0%}\n\n"
+    )
+
+    if wd.get("adjacent_bin"):
+        msg += (
+            f"Adjacent: {wd['adjacent_bin']}°F\n"
+            f"  Confluence: {wd['adjacent_count']}/{wd['total_sources']}\n"
+            f"  Market Price: {wd['adjacent_price']*100:.0f}¢\n\n"
+        )
+
+    if wd.get("current_obs"):
+        obs = wd["current_obs"]
+        msg += (
+            f"🌡 <b>LIVE OBSERVATION:</b>\n"
+            f"  Current temp at {html_escape(wd.get('station', ''))}: "
+            f"{obs['temp_f']:.0f}°F (as of {obs['time']})\n"
+        )
+        if obs.get("already_reached"):
+            msg += f"  → {wd['best_bin']}°F range <b>ALREADY REACHED</b>\n"
+        msg += "\n"
+
+    msg += (
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📈 <b>ROI if correct: {opp.profit_pct:.0f}%</b>\n"
+        f"💰 $1 at {wd['market_price']*100:.0f}¢ → ${1.0/max(wd['market_price'], 0.01):.2f} payout\n"
+        f"🟢 Risk: {opp.risk_level.title()}\n"
+        f"⏰ Resolves: {html_escape(opp.hold_time)}\n"
+    )
+
+    if opp.urls and opp.urls[0]:
+        msg += f'\n🔗 <a href="{opp.urls[0]}">Polymarket</a>'
+
+    return msg
+
+
 def format_opportunity(opp: Opportunity) -> str:
     """Format any opportunity type into a Telegram message."""
+    # Weather forecasts have custom rich formatting
+    if opp.opp_type == "weather_forecast" and hasattr(opp, '_weather_data'):
+        return _format_weather_signal(opp)
+
     # Type-specific emoji and label
     type_info = {
         "cross_platform_arb": ("🔄", "CROSS-PLATFORM ARB", "💎"),
@@ -53,6 +119,7 @@ def format_opportunity(opp: Opportunity) -> str:
         "resolution_intel": ("🔍", "RESOLUTION INTEL", "📝"),
         "micro_arb": ("⚡", "MICRO ARB", "🔬"),
         "spread_arb": ("📐", "SPREAD ARB", "📊"),
+        "weather_forecast": ("🌤", "WEATHER FORECAST", "🔬"),
     }
     emoji, label, icon = type_info.get(opp.opp_type, ("📌", "OPPORTUNITY", "📌"))
     # Risk level emoji

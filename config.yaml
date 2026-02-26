@@ -193,3 +193,14 @@ logging:
   level: "INFO"
   file: "arb_bot_v2.log"
   console: true
+
+# ---------- Weather Forecast Signals (Climate category) ----------
+weather_forecast:
+  enabled: true
+  min_confluence_pct: 60         # Minimum % of sources agreeing to send signal
+  min_edge_pct: 15               # Minimum edge (confluence% - market%) to alert
+  include_afternoon_obs: true    # Include real-time station observations 12-6PM ET
+  # Optional API keys (leave empty to skip that source; 3 free sources always work)
+  openweathermap_key: ""         # Free: 1000 calls/day — openweathermap.org
+  weatherapi_key: ""             # Free: 1M calls/month — weatherapi.com
+  visualcrossing_key: ""         # Free: 1000 calls/day — visualcrossing.com
