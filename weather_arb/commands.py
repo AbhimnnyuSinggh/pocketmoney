@@ -31,14 +31,29 @@ def register_weather_commands(handler):
     async def cmd_perf(chat_id: str, text: str):
         if not handler._is_admin(chat_id):
             return
+
+        # Session stats from WeatherSession
+        session_msg = ""
+        wa = getattr(handler, '_weather_arb', None)
+        if wa and hasattr(wa, 'session'):
+            s = wa.session
+            session_msg = (
+                f"💰 <b>Capital:</b> ${s.available_capital:.2f} available / "
+                f"${s.total_deployed:.2f} deployed\n"
+                f"📈 <b>P&L:</b> ${s.net_pnl:+.2f} "
+                f"({s.trades_won}W / {s.trades_lost}L = {s.win_rate:.0f}%)\n"
+                f"🎯 <b>Phase:</b> {s.phase}\n"
+                f"📊 <b>Bankroll:</b> ${s.current_bankroll:.2f}\n"
+                f"🔁 Active positions: {len(s.active_positions)}\n\n"
+            )
+
         report, img_path = await get_dashboard()
-        
-        # We can send the photo containing the markdown as its caption,
-        # or send them sequentially. Let's send photo with caption if available.
+        full_report = session_msg + report
+
         if img_path:
-            handler._send_photo(chat_id, img_path, caption=report)
+            handler._send_photo(chat_id, img_path, caption=full_report)
         else:
-            handler._send(chat_id, report)
+            handler._send(chat_id, full_report, parse_mode="HTML")
 
     def cmd_weather_dryrun(chat_id: str, text: str):
         if not handler._is_admin(chat_id):

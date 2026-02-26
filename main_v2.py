@@ -311,6 +311,17 @@ def run_cycle(cfg: dict, cycle: int, bot_handler: TelegramBotHandler | None = No
                         with run_cycle._weather_lock:
                             import asyncio
                             try:
+                                # 1. Check resolutions first (frees capital)
+                                resolved = asyncio.run(wa.check_resolutions())
+                                for r in resolved:
+                                    emoji = "✅" if r["won"] else "❌"
+                                    bot_handler._send_admin(
+                                        f"{emoji} Weather {r['bin']}: "
+                                        f"{'Won' if r['won'] else 'Lost'} "
+                                        f"${r['profit']:+.2f} (stake ${r['stake']:.2f})"
+                                    )
+
+                                # 2. Scan for new trades
                                 weather_opps = asyncio.run(wa.scan_and_deploy(poly_markets))
                                 if weather_opps:
                                     bot_handler.distribute_signals(weather_opps, cfg)

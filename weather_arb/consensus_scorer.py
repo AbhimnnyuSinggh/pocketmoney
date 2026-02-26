@@ -36,12 +36,26 @@ def construct_bins(center_temp: float, num_bins_each_side: int = 4) -> list[tupl
     return bins
 
 def parse_polymarket_bin(bin_title: str) -> tuple[float, float] | None:
-    """Parse '34-35' into (34.0, 35.0)"""
+    """Parse '34-35' into (34.0, 35.0), '50+' into (50.0, 200.0), '20-' into (-50.0, 20.0)"""
     import re
-    # Match patterns like "34-35°F", "34-35", "50 or higher", "10 or lower"
+
+    # Standard range: "34-35"
     m = re.search(r'(-?\d+)\s*-\s*(-?\d+)', bin_title)
     if m:
         return float(m.group(1)), float(m.group(2))
+
+    # "50+" or "50 or higher"
+    if bin_title.endswith("+") or "or higher" in bin_title.lower():
+        num = re.search(r'(\d+)', bin_title)
+        if num:
+            return float(num.group(1)), 200.0  # Upper bound very high
+
+    # "20-" or "20 or lower"
+    if bin_title.endswith("-") or "or lower" in bin_title.lower():
+        num = re.search(r'(\d+)', bin_title)
+        if num:
+            return -50.0, float(num.group(1))  # Lower bound very low
+
     return None
 
 def compute_bin_probs(forecasts: dict[str, float], biases: dict[str, float], target_bins: list[str]) -> dict[str, float]:
