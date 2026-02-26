@@ -86,11 +86,20 @@ def _format_weather_signal(opp) -> str:
             msg += f"  → {wd['best_bin']}°F range <b>ALREADY REACHED</b>\n"
         msg += "\n"
 
+    # Bug 5: Market disagreement warning
+    if wd.get("market_disagrees") and wd.get("market_leader_bin"):
+        msg += (
+            f"⚠️ <b>Market disagrees:</b> {wd['market_leader_bin']}°F leads at "
+            f"{wd['market_leader_price']*100:.0f}¢.\n"
+            f"Our models say {wd['best_bin']}°F — could be edge OR incomplete data.\n\n"
+        )
+
+    risk_emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(opp.risk_level, "⚪")
     msg += (
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📈 <b>ROI if correct: {opp.profit_pct:.0f}%</b>\n"
         f"💰 $1 at {wd['market_price']*100:.0f}¢ → ${1.0/max(wd['market_price'], 0.01):.2f} payout\n"
-        f"🟢 Risk: {opp.risk_level.title()}\n"
+        f"{risk_emoji} Risk: {opp.risk_level.title()}\n"
         f"⏰ Resolves: {html_escape(opp.hold_time)}\n"
     )
 
