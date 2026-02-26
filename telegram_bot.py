@@ -289,6 +289,12 @@ class TelegramBotHandler:
         # Stats
         self.signals_sent = 0
         self.start_time = time.time()
+        
+        # Cross-thread Engine Diagnostics
+        self.engine_metrics = {
+            "last_scan": 0,
+            "cycles": 0,
+        }
         # Per-user dedup: {chat_id: {opp_key: last_sent_time}}
         self._user_seen: dict[str, dict[str, float]] = {}
         self.dedup_cooldown = cfg.get("interactive", {}).get(
@@ -1251,6 +1257,8 @@ class TelegramBotHandler:
                 self._cmd_autotrade(chat_id)
             elif text == "/active_orders":
                 self._cmd_active_orders(chat_id)
+            elif text.startswith("/debug"):
+                self._cmd_debug(chat_id, text)
             else:
                 command = text.split()[0] if text else ""
                 if command in getattr(self, "routes", {}):
@@ -1673,6 +1681,22 @@ class TelegramBotHandler:
             f"\nUptime: {hours}h {mins}m\n"
             f"Total signals sent: <b>{self.signals_sent}</b>\n"
         )
+        
+        # Engine Diagnostics Heartbeat
+        cycles = self.engine_metrics.get("cycles", 0)
+        last_scan = self.engine_metrics.get("last_scan", 0)
+        if cycles > 0:
+            ago = int(time.time() - last_scan) if last_scan else 0
+            if ago < 60:
+                ago_str = f"{ago}s ago"
+            else:
+                ago_str = f"{ago // 60}m {ago % 60}s ago"
+            msg += (
+                f"Engine cycles: <b>{cycles}</b>\n"
+                f"Last scan: <b>{ago_str}</b>\n"
+            )
+        else:
+            msg += f"Engine status: <b>Starting...</b>\n"
         if hist_text:
             msg += f"\n📦 <b>Cached signals:</b>\n{hist_text}\n"
         msg += (
@@ -1951,6 +1975,49 @@ class TelegramBotHandler:
                     
         else:
             msg += "No auto-trader active. (Signals Only mode)"
+            
+        self._send(chat_id, msg, parse_mode="HTML")
+
+    def _cmd_debug(self, chat_id: str, text: str):
+        if not self._is_admin(chat_id): return
+        
+        parts = text.split()
+        if len(parts) < 2:
+            self._send(chat_id, "📝 Usage: `/debug <bonds|lp|weather|cross>`\n\nUse this to see exactly *why* the bot hasn't taken a trade.", parse_mode="Markdown")
+            return
+            
+        mod = parts[1].lower()
+        msg = f"🔍 <b>DIAGNOSTICS: {mod.upper()}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        if mod == "bonds":
+            min_p = self.cfg.get("bonds", {}).get("min_price", 0.93)
+            min_liq = self.cfg.get("bonds", {}).get("min_liquidity", 5000)
+            msg += f"<b>Mathematical Criteria:</b>\n"
+            msg += f"• Price must be <b>>= {min_p * 100:.0f}¢</b>\n"
+            msg += f"• Market Liquidity <b>>= ${min_liq:,}</b>\n\n"
+            msg += f"<b>Why is it not trading?</b>\n"
+            msg += f"The scanner is checking hundreds of markets per minute. Currently, all resolved-guaranteed markets are likely trading below {min_p * 100:.0f}¢ (meaning the edge is too small), or lack sufficient liquidity. The bot is designed to be <b>extremely patient</b>; it will strike instantly the moment a market falls into this pocket."
+            
+        elif mod == "lp":
+            lp_cfg = self.cfg.get("lp_farming", {})
+            min_spread = lp_cfg.get("min_spread_pct", 1.5)
+            min_vol = lp_cfg.get("min_maker_volume", 50000)
+            msg += f"<b>Mathematical Criteria:</b>\n"
+            msg += f"• Spread Width <b>>= {min_spread}%</b>\n"
+            msg += f"• 24h Volume <b>>= ${min_vol:,}</b>\n\n"
+            msg += f"<b>Why is it not trading?</b>\n"
+            msg += f"If spreads are too tight, running as an LP results in guaranteed toxic flow (you get run over by informed traders). The bot is waiting for a market with high volume but a temporary liquidity gap."
+            
+        elif mod == "weather":
+            wa_cfg = self.cfg.get("weather_arb", {})
+            msg += f"<b>Mathematical Criteria:</b>\n"
+            msg += f"• Weather Models (GFS/ECMWF) Consensus > 80%\n"
+            msg += f"• Trades placed only between 12:00 PM and 3:00 PM EST (NWS observation window)\n\n"
+            msg += f"<b>Why is it not trading?</b>\n"
+            msg += f"Weather arbitration relies on capturing the exact moment the NWS physically records the afternoon temperature high. It only pulls the trigger right before the market locks."
+            
+        else:
+            msg += "Unknown module. Try: bonds, lp, weather."
             
         self._send(chat_id, msg, parse_mode="HTML")
 
